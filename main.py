@@ -304,7 +304,9 @@ tf.app.run()은 그걸 wraping해주는 좋은 함수이고, 그걸 main()함수
   add_arguments(nmt_parser)
   FLAGS, unparsed = nmt_parser.parse_known_args()
   tf.app.run(main=main, argv=[sys.argv[0]] + unparsed)        #https://stackoverflow.com/questions/33703624/how-does-tf-app-run-work
-보통 위처럼 세줄정도는 나올텐데,
+보통 위처럼 세줄정도는 나올텐데, 그것보다는 한줄로 써서 위의 기능들을 취하는 것 아닐까?
+그리고 main()으로 구분하면 가독성도 좋아지고, __main__이 아니어도 어떻게 접근이 가능할수도 있고..여러가지 가능성이 나오게되지
+
 """
 if __name__ == '__main__':
     # print(callable(main))
