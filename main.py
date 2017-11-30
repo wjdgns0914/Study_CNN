@@ -123,8 +123,6 @@ def train(model, data,
           log_dir='./log',
           checkpoint_dir='./checkpoint',
           num_epochs=-1):
-    print(FLAGS.Drift)
-    print(FLAGS.Variation)
     # tf Graph input
     with tf.device('/cpu:0'):
         with tf.name_scope('data'):
@@ -262,11 +260,23 @@ Argv in Python
 The list of command line arguments passed to a Python script. argv[0] is the script name (it is operating system 
 dependent whether this is a full pathname or not). If the command was executed using the -c command line option 
 to the interpreter, argv[0] is set to the string '-c'.
-FLAGS로 정의 된 파라미터들을 받았고, 그걸 기반으로 main함수를 실행하게 된다.
+
+지금은 FLAGS가 글로벌하게 선언이 되어있어서 argv가 전달된다는게 큰의미는 없다.
+(전달안되도 어차피 글로벌이라 그냥 사용가능.tf.app.run()은 그냥 one line fast argument parser로 생각하면 될 듯 하다.)
 """
 
 def main(argv=None):  # pylint: disable=unused-argument
     print(argv)
+    """
+    설명3:
+    1) gfile은 약간 폴더,파일쪽 다루는 패키지인가보다, 만약 checkpoint_dir에서 지정 된 폴더가 없으면 그걸 만들어서
+    2) os.path.join은 단순히 경로 만들어주는 함수다, 저절로 / 를 추가해주는게 편리한 점
+    3) assert FLAGS.model로 명시한 모델이 있으면 통과 없으면 뒤에 있는 오류메시지 발생
+    4) 해당 파이썬 파일을(인풋1) 인풋2로 복사한다.
+    5) 해당 모델을 import한다, importlib.import_module()함수는 코드 과정 중에 패키지를 import 할 때 쓰는 듯 하다.
+    6) data = get_data_provider(FLAGS.dataset, training=True) 에서 training에 따라 trainset 혹은 testset을 불러온다.
+    7) 위에서 정의한 train함수를 실행 - train을 진행하기 전에 data.py파일을 살펴보자
+    """
     if not gfile.Exists(FLAGS.checkpoint_dir):
         # gfile.DeleteRecursively(FLAGS.checkpoint_dir)
         gfile.MakeDirs(FLAGS.checkpoint_dir)
@@ -282,6 +292,7 @@ def main(argv=None):  # pylint: disable=unused-argument
           log_dir=FLAGS.log_dir,
           num_epochs=FLAGS.num_epochs)
 """
+
 설명1:여기서부터 설명한다,일단 이 코드를 실행하면 위에서부터 라인바이라인 실행이 된다.
 다만 함수는 라인바이라인 실행 되는 것이 아니라 함수가 있다는 것을 알려줄 수 있는 '선언'만 하고 넘어가게 된다.
 그러면 마지막에 실행되는 것이 아래의 조건문이다.
