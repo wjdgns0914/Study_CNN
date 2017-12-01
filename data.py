@@ -18,7 +18,19 @@ URLs = {
     'cifar10': 'http://www.cs.toronto.edu/~kriz/cifar-10-binary.tar.gz',
     'cifar100': 'http://www.cs.toronto.edu/~kriz/cifar-100-binary.tar.gz'
     }
+"""
+설명8:
+만약에 데이터셋 이름으로 된 폴더가 없을 경우 그 폴더를 일단 만든다,
+sys.stdout.flush()명령어는 버퍼를 비워준다,파이썬에서의 출력은 버퍼를 이용한다,
+버퍼를 비워준다는건, 버퍼에 있는 데이터가 다 출력(혹은 write) 될 때까지 기다린다는 뜻이다.
 
+\r 이건 carriage return이라는 코드라는데..커서를 항의 맨 앞으로 옮겨주는 역할을 한다고 한다.
+즉 매번 stdout.write() 할 때마다 항의 맨 앞에서 다시 쓰는거다, 그래서 한줄에서 퍼센테이지만 변하는 걸로 보인다.
+
+    if apply_func is not None:
+        apply_func(filepath)
+위의 코드는 apply_func에 파일 압축 푸는 함수를 넣어서, 파일 압축을 풀어준다.
+"""
 def __maybe_download(data_url, dest_directory, apply_func=None):
   if not os.path.exists(dest_directory):
     os.makedirs(dest_directory)

@@ -7,17 +7,6 @@ from numpy import ones
 FLAGS = tf.app.flags.FLAGS
 print(FLAGS.Drift)
 print(FLAGS.Variation)
-
-def binarize(x):
-    """
-    Clip and binarize tensor using the straight through estimator (STE) for the gradient.
-    """
-    g = tf.get_default_graph()
-
-    with tf.name_scope("Binarized") as name:
-        with g.gradient_override_map({"Sign": "Identity"}):
-            x=tf.clip_by_value(x,-1,1)
-            return tf.sign(x)
 if FLAGS.Variation==True:
     Reset_Meanmean, Reset_Meanstd = 0., 0.1707
     Reset_Stdmean, Reset_Stdstd = 0.0942, 0.01884
@@ -29,6 +18,16 @@ else:
     Set_Meanmean, Set_Meanstd = 0., 0.0000000001
     Set_Stdmean, Set_Stdstd = 0., 0.
 
+def binarize(x):
+    """
+    Clip and binarize tensor using the straight through estimator (STE) for the gradient.
+    """
+    g = tf.get_default_graph()
+
+    with tf.name_scope("Binarized") as name:
+        with g.gradient_override_map({"Sign": "Identity"}):
+            x=tf.clip_by_value(x,-1,1)
+            return tf.sign(x)
 @tf.RegisterGradient("fluc_grad")
 def fluc_grad(op,grad):
     shape=op.inputs[1]._shape_as_list()
@@ -36,24 +35,17 @@ def fluc_grad(op,grad):
 
 def fluctuate(x,scale=1):
     filter_shape = x.get_shape().as_list()
-    g = tf.get_default_graph()
+    # g = tf.get_default_graph()
     pre_Wbin = tf.Variable(initial_value=tf.zeros(shape=filter_shape),name='pre_Wbin',trainable=False)
     pre_Wbin_val_place=tf.placeholder(dtype=tf.float32,shape=filter_shape)
     pre_Wbin_update_op=pre_Wbin.assign(pre_Wbin_val_place)
     pre_Wfluc = tf.Variable(initial_value=tf.zeros(shape=filter_shape),name='pre_Wfluc',trainable=False)
     pre_Wfluc_val_place = tf.placeholder(dtype=tf.float32, shape=filter_shape)
     pre_Wfluc_update_op = pre_Wfluc.assign(pre_Wfluc_val_place)
-
     tf.add_to_collection('pre_Wbin',pre_Wbin_val_place)
     tf.add_to_collection('pre_Wbin_update_op', pre_Wbin_update_op)
     tf.add_to_collection('pre_Wfluc', pre_Wfluc_val_place)
     tf.add_to_collection('pre_Wfluc_update_op', pre_Wfluc_update_op)
-    # if tf.get_collection('use_for_coming_batch')==[]:
-    #     pre_Wbin=pre_Wfluc=tf.zeros(shape=filter_shape)
-    # else:
-    #     pre_Wbin=tf.get_collection('use_for_coming_batch')[0][x.name.split('/')[0]]
-    #     pre_Wfluc=tf.get_collection('use_for_coming_batch')[1][x.name.split('/')[0]]
-        # g = tf.get_default_graph()
 
     with tf.name_scope("Fluctuated") as name:
         Reset_Meanvalue = tf.Variable(tf.random_normal(shape=filter_shape,
@@ -81,7 +73,6 @@ def fluctuate(x,scale=1):
                                       "Add": "fluc_grad"}):
             # assign 1 to elements which have same state with pre-state
             keep_element = tf.cast(tf.equal(x,pre_Wbin), tf.float32)
-            tf.add_to_collection('test',keep_element)
             # assign 1 to elements which have different state with pre-state
             update_element = tf.cast(tf.not_equal(x,pre_Wbin), tf.float32)
             # 이 부분에서 쓰지도않는 랜덤 값이 많이 발생하는데 일단 두고 나중에 고치든가 하자
