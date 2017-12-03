@@ -35,7 +35,6 @@ def fluc_grad(op,grad):
 
 def fluctuate(x,scale=1):
     filter_shape = x.get_shape().as_list()
-    # g = tf.get_default_graph()
     pre_Wbin = tf.Variable(initial_value=tf.zeros(shape=filter_shape),name='pre_Wbin',trainable=False)
     pre_Wbin_val_place=tf.placeholder(dtype=tf.float32,shape=filter_shape)
     pre_Wbin_update_op=pre_Wbin.assign(pre_Wbin_val_place)
@@ -67,6 +66,7 @@ def fluctuate(x,scale=1):
                                    trainable=False)
         fluc_Reset = tf.reshape(tf.distributions.Normal(loc=Reset_Meanvalue, scale=Reset_Stdvalue).sample(1),filter_shape)
         fluc_Set = tf.reshape(tf.distributions.Normal(loc=Set_Meanvalue, scale=Set_Stdvalue).sample(1), filter_shape)
+        g = tf.get_default_graph()
         with g.gradient_override_map({"Mul": "fluc_grad","Cast": "Identity",
                                       "Equal": "fluc_grad","Greater":"fluc_grad",
                                       "LessEqual":"fluc_grad","NotEqual":"fluc_grad",
@@ -80,9 +80,10 @@ def fluctuate(x,scale=1):
             Wfluc_Set = update_element * fluc_Set * tf.cast(x <= 0, tf.float32)
             # fluctuation이 적용 된 최종 weight 값,Reset,set에 drift를 따로 적용하기 위해 pre_Wbin이 0보다 큰 부분,작은 부분, 두 부분으로 나누었다.
             step_col=tf.get_collection("Step")
-            if FLAGS.Drift and step_col!=[]:
+            if FLAGS.Drift and step_col!=[]: #and에 문제가 있었다.
                 batch_num = step_col[0]
                 drift_factor =tf.cast((1 + batch_num) / batch_num,dtype=tf.float32)
+                tf.add_to_collection("testt",drift_factor)
                 drift_scale = tf.cond(tf.equal(batch_num, 0), lambda: tf.constant(0.),     #tf.cast(tf.equal(batch_num, 0), dtype=tf.float32)
                                       lambda: tf.cast(0.09 * tf.log(drift_factor) / tf.log(tf.constant(10, dtype=tf.float32)), dtype=tf.float32))
             else:
@@ -94,7 +95,10 @@ def fluctuate(x,scale=1):
 
         return Wfluc
 
-
+"""
+주의:binarize(x)가 activation까지 바이너리화 하는 중이다.
+아래의 세개는 각각 Binary Conv layer,Binary Conv layer for weight, Vanilla Conv layer
+"""
 def BinarizedSpatialConvolution(nOutputPlane, kW, kH, dW=1, dH=1,
         padding='VALID', bias=True, reuse=None, name='BinarizedSpatialConvolution'):
     def b_conv2d(x, is_training=True):
@@ -154,6 +158,9 @@ def SpatialConvolution(nOutputPlane, kW, kH, dW=1, dH=1,
                 out = tf.nn.bias_add(out, b)
             return out
     return conv2d
+"""
+아래의 세개는 각각 Vanilla Affine layer,Binary Affine layer,Binary Affine layer for weight, 
+"""
 #Fully connected layer
 def Affine(nOutputPlane, bias=True, name=None, reuse=None):
     def affineLayer(x, is_training=True):
@@ -213,16 +220,19 @@ def BinarizedWeightOnlyAffine(nOutputPlane, bias=True, name=None, reuse=None):
                 output = tf.nn.bias_add(output, b)
         return output
     return bwo_affineLayer
+
 #bias 더 해주는 레이어
 def Linear(nInputPlane, nOutputPlane):
     return Affine(nInputPlane, nOutputPlane, add_bias=False)
 
-
+#여기서는 Sequential을 구성하기 위해서 일반레이어함수를 Sequential용으로 바꿔준다.
+#*args,**kwargs 이 둘은 지금은 확정되지않았지만, 추후에 들어올 수 있는 인풋을 담당한다.
 def wrapNN(f,name,*args,**kwargs):
     def layer(x, scope=name, is_training=True):
         return f(x,scope=scope,*args,**kwargs)
     return layer
 
+#이것도 사실 위의 함수와 기능은 똑같으나, dropout이기 때문에 training일 때와 test일 때를 다르게 해줘야해서, 따로 함수를 정의
 def Dropout(p, name='Dropout'):
     def dropout_layer(x, is_training=True):
         with tf.variable_scope(values=[x], name_or_scope=None, default_name=name):
@@ -235,6 +245,11 @@ def Dropout(p, name='Dropout'):
                 return x
     return dropout_layer
 
+"""
+아래의 두 함수는 activation이다, activation layer를 만드는 셈
+다시 한번 말하지만 아래처럼 함수로 반환하는 이유는 인풋의 자유를 남겨놓기 위해서다.
+HardTanh은 Tanh랑 다르다.
+"""
 def ReLU(name='ReLU'):
     def layer(x, is_training=True):
         with tf.variable_scope(values=[x], name_or_scope=None, default_name=name):
@@ -250,7 +265,14 @@ def HardTanh(name='HardTanh'):
 
 def View(shape, name='View'):
     return wrapNN(tf.reshape,shape=shape)
-
+"""
+    kH = kH or kW    의 뜻은 전자가 없으면 후자로 쓴다는 뜻
+->최소 kW는 인풋으로 넣어줘야 멀쩡한 함수 실행이 가능하다,
+kW는 window size, kH없으면 윈도우는 kH=kW인 정사각형이 된다 
+만약 strides도 안넣어준다면 stride는 윈도우의 가로세로와 같다.
+Tip:파이썬에서는 and와 or이 본래 논리연산자의 기능을 하면서 인풋으로 들어간 값들을 이용 할 수 있도록하여
+효율을 극대화 하였다.
+"""
 def SpatialMaxPooling(kW, kH=None, dW=None, dH=None, padding='VALID',
             name='SpatialMaxPooling'):
     kH = kH or kW
@@ -286,7 +308,10 @@ def Sequential(moduleList):
             tf.add_to_collection(tf.GraphKeys.ACTIVATIONS, output)
         return output
     return model
-
+"""
+아래 두 함수는 현재 사용하지 않음, 다만 나중에 네트워크 바꿀 때 사용할 수도 있어서 냅두었음
+"""
+#병렬연결모드
 def Concat(moduleList, dim=3):
     def model(x, is_training=True):
     # Create model
@@ -299,6 +324,7 @@ def Concat(moduleList, dim=3):
         return output
     return model
 
+#말그대로 residual
 def Residual(moduleList, name='Residual'):
     m = Sequential(moduleList)
     def model(x, is_training=True):

@@ -9,15 +9,20 @@ import time
 import numpy as np
 import tensorflow as tf
 from data import get_data_provider
-
+"""
+질문1:sess를 인자로 왜 받아올까? 내가 더한거였다..삭제.
+질문2:왜 세션을 한번 더 여는걸까?
+    추측1#이 녀석 때문에 sess를 하나 더 생성해야한다. 같은 세션안에 조정자가 여러개 있으면 충돌하는거 같다
+    추측2#저장 된 웨이트를 통해 evaluation을 할 수 있게하려고?같은 세션에서 저장한 변수를 restore하면 덮어씌워지니까 같다.
+    ->이 이유는 아닐듯, 왜냐면 그럴거면 바로 evaluate쓸 때의 파라미터로 evaluation하면 되니까.
+"""
 def evaluate(model, dataset,
         batch_size=128,
-        checkpoint_dir='./checkpoint',sess=tf.Session()):
+        checkpoint_dir='./checkpoint'):
     with tf.Graph().as_default() as g:
         data = get_data_provider(dataset, training=False)
-
         x, yt = data.generate_batches(batch_size)
-        is_training = tf.placeholder(tf.bool,[],name='is_training')
+        # is_training = tf.placeholder(tf.bool,[],name='is_training')
         # Build the Graph that computes the logits predictions
         y = model(x, is_training=False)
 
@@ -71,9 +76,7 @@ def evaluate(model, dataset,
             coord.request_stop(e)
 
         coord.request_stop()
-        coord.join(threads)   #이 녀석 때문에 sess를 하나 더 생성해야한다. 그냥 sess를 인자로 받아오면
-        #조정자가 충돌하는거 같다
-        #아니네, 아래를 보니까 애를 독립시킨 진정한 이유는 저장 된 웨이트를 통해 evaluation을 할 수 있게하려고인거 같다.
+        coord.join(threads)
         return total_acc, total_loss
 
 def main(argv=None):  # pylint: disable=unused-argument

@@ -16,7 +16,7 @@ MOVING_AVERAGE_DECAY = 0.997
 FLAGS = tf.app.flags.FLAGS
 
 # Basic model parameters.
-tf.app.flags.DEFINE_integer('batch_size', 128,
+tf.app.flags.DEFINE_integer('batch_size', 64,
                             """Number of images to process in a batch.""")
 tf.app.flags.DEFINE_integer('num_epochs', 1,
                             """Number of epochs to train. -1 for unlimited""")
@@ -113,7 +113,6 @@ def _learning_rate_decay_fn(learning_rate, global_step):
       decay_steps=1000,
       decay_rate=0.9,
       staircase=True)
-
 learning_rate_decay_fn = _learning_rate_decay_fn
 
 ## model을 data로 training 시켜주는 함수
@@ -210,20 +209,13 @@ def train(model, data,
         print('Started epoch %d' % (i+1))
         for j in tqdm(range(num_batches)):
             #tf.add_to_collection('use_for_this_batch', save_for_next_batch)    #이 코드가 메모리 에러를 일으키는 주범이었다. dict은 알아서 메모리 관리 잘하고 있었음.
+            print("drift_factor=",sess.run(tf.get_collection("testt")))
             list_run = sess.run(list_Wbin+list_Wfluc+[train_op, loss]+keep)  #train_op를 통해 업데이트를 하기 전에 list_Wbin,Wfluc에 있는 var들의 값을 save for next batch
             #업데이트가 완료되었고, 방금 업데이트 하기 전에 저장한 값들을 다음 batch에 쓸거기 때문에 use_for_coming_batch로 넣어준다.
             for index, value in enumerate(list_run[0:len(list_Wbin)]):
                 sess.run(list_pre_Wbin_op[index],{list_pre_Wbin[index]:value})
             for index, value in enumerate(list_run[len(list_Wbin):len(list_Wbin + list_Wfluc)]):
                 sess.run(list_pre_Wfluc_op[index],{list_pre_Wfluc[index]:value})
-            # for index, value in enumerate(list_run[0:len(list_Wbin)]):
-            #     sess.run(tf.assign(list_pre_Wbin[index],value))
-            # for index, value in enumerate(list_run[len(list_Wbin):len(list_Wbin + list_Wfluc)]):
-            #     sess.run(tf.assign(list_pre_Wfluc[index], value))
-            # for index,var in enumerate(ulist_run[0:len(list_Wbin)]):
-            #     use_for_coming_batch[0][list_Wbin[index].name.split('/')[0]] = var
-            # for index,var in enumerate(ulist_run[len(list_Wbin):len(list_Wbin+list_Wfluc)]):
-            #     use_for_coming_batch[1][list_Wfluc[index].name.split('/')[0]] = var
             if j%10==0:
                 summary_writer.add_summary(sess.run(summary_op), global_step=sess.run(global_step))
 
@@ -234,7 +226,7 @@ def train(model, data,
         saver.save(sess, save_path=checkpoint_dir + '/model.ckpt', global_step=global_step)
         test_acc, test_loss = evaluate(model, FLAGS.dataset,
                                        batch_size=batch_size,
-                                       checkpoint_dir=checkpoint_dir,sess=sess)
+                                       checkpoint_dir=checkpoint_dir)
         # log_dir=log_dir)
         print('Test     - Accuracy: %.3f' % test_acc, '  Loss:%.3f' % test_loss)
         if best_acc<test_acc:
@@ -316,7 +308,7 @@ tf.app.run()은 그걸 wraping해주는 좋은 함수이고, 그걸 main()함수
   FLAGS, unparsed = nmt_parser.parse_known_args()
   tf.app.run(main=main, argv=[sys.argv[0]] + unparsed)        #https://stackoverflow.com/questions/33703624/how-does-tf-app-run-work
 보통 위처럼 세줄정도는 나올텐데, 그것보다는 한줄로 써서 위의 기능들을 취하는 것 아닐까?
-그리고 main()으로 구분하면 가독성도 좋아지고, __main__이 아니어도 어떻게 접근이 가능할수도 있고..여러가지 가능성이 나오게되지
+그리고 main()으로 구분하면 가독성도 좋아지고, __main__이 아니어도 어떻게 접근이 가능할수도 있고..여러가지 가능성이 나오게되는 장점도 있다
 
 """
 if __name__ == '__main__':
@@ -324,48 +316,3 @@ if __name__ == '__main__':
     # print(locals())
     tf.app.run()
 
-
-"""
-num of trainable paramaters: 10355860
-Started epoch 1
-Training Accuracy: 0.436
-Training Loss: 1.613
-Test Accuracy: 0.466
-Test Loss: 1.528
-
-Started epoch 2
-Training Accuracy: 0.579
-Training Loss: 1.278
-Test Accuracy: 0.617
-Test Loss: 1.184
-
-Started epoch 3
-Training Accuracy: 0.658
-Training Loss: 1.097
-Test Accuracy: 0.681
-Test Loss: 1.029
-
-Started epoch 4
-Training Accuracy: 0.708
-Training Loss: 0.981
-Test Accuracy: 0.731
-Test Loss: 0.939
-
-Started epoch 5
-Training Accuracy: 0.742
-Training Loss: 0.901
-Test Accuracy: 0.750
-Test Loss: 0.889
-
-Started epoch 6
-Training Accuracy: 0.769
-Training Loss: 0.836
-Test Accuracy: 0.770
-Test Loss: 0.840
-
-Started epoch 7
-Training Accuracy: 0.790
-Training Loss: 0.791
-Test Accuracy: 0.784
-Test Loss: 0.817
-"""
