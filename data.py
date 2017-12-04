@@ -5,6 +5,7 @@ from __future__ import print_function
 import os
 import sys
 import tarfile
+import gzip
 import tensorflow as tf
 import math
 from six.moves import urllib
@@ -16,7 +17,11 @@ from six.moves import urllib
 DATA_DIR = './Datasets/'
 URLs = {
     'cifar10': 'http://www.cs.toronto.edu/~kriz/cifar-10-binary.tar.gz',
-    'cifar100': 'http://www.cs.toronto.edu/~kriz/cifar-100-binary.tar.gz'
+    'cifar100': 'http://www.cs.toronto.edu/~kriz/cifar-100-binary.tar.gz',
+    'MNIST_train_image': 'http://yann.lecun.com/exdb/mnist/train-images-idx3-ubyte.gz',
+    'MNIST_train_lable': 'http://yann.lecun.com/exdb/mnist/train-labels-idx1-ubyte.gz',
+    'MNIST_test_image': 'http://yann.lecun.com/exdb/mnist/t10k-images-idx3-ubyte.gz',
+    'MNIST_test_label': 'http://yann.lecun.com/exdb/mnist/t10k-labels-idx1-ubyte.gz'
     }
 """
 설명8:
@@ -93,17 +98,44 @@ def __read_cifar(filenames, shuffle=True, cifar100=False):
   record_bytes = tf.decode_raw(value, tf.uint8)
 
   # The first bytes represent the label, which we convert from uint8->int32.
-  label = tf.cast(
-      tf.slice(record_bytes, [0], [label_bytes]), tf.int32)
+  label = tf.cast(tf.slice(record_bytes, [0], [label_bytes]), tf.int32)
 
   # The remaining bytes after the label represent the image, which we reshape
   # from [depth * height * width] to [depth, height, width].
   depth_major = tf.reshape(tf.slice(record_bytes, [label_bytes], [image_bytes]),  #def slice(input_, begin, size, name=None):
                            [depth, height, width])
+
   # Convert from [depth, height, width] to [height, width, depth].
   image = tf.transpose(depth_major, [1, 2, 0])
 
   return tf.cast(image, tf.float32), label
+
+
+def __read_MNIST(filenames, shuffle=False):
+    """Reads and parses examples from MNIST data files."""
+    filename_queue_image = tf.train.string_input_producer(filenames[0], shuffle=shuffle, num_epochs=None)
+    filename_queue_label = tf.train.string_input_producer(filenames[1], shuffle=shuffle, num_epochs=None)
+    label_bytes = 1
+    height = 28
+    width = 28
+    depth = 1
+    image_bytes = height * width * depth
+
+    reader_image = tf.FixedLengthRecordReader(record_bytes=image_bytes, header_bytes=16)
+    reader_label = tf.FixedLengthRecordReader(record_bytes=label_bytes, header_bytes=8)
+
+    key_image, value_image = reader_image.read(filename_queue_image)
+    key_label, value_label = reader_label.read(filename_queue_label)
+
+    record_bytes_image = tf.decode_raw(value_image, tf.uint8)
+    record_bytes_label = tf.decode_raw(value_label, tf.uint8)
+
+    depth_major = tf.reshape(tf.slice(record_bytes_image, [0], [image_bytes]),  # def slice(input_, begin, size, name=None):
+                             [depth, height, width])
+    label = tf.cast(tf.slice(record_bytes_label, [0], [label_bytes]), tf.int32)
+    image = tf.transpose(depth_major, [1, 2, 0])
+
+    return tf.cast(image, tf.float32), label
 """
 설명5:
 클래스 안에 매서드가 한개있다! 클래스응용에 참 좋은 예제인 것 같다.
@@ -119,7 +151,7 @@ class DataProvider:
         self.data = data
         self.training = training
 
-    def generate_batches(self, batch_size, min_queue_examples=1000, num_threads=8):
+    def next_batch(self, batch_size, min_queue_examples=1000, num_threads=8):
         """Construct a queued batch of images and labels.
 
         Args:
@@ -139,7 +171,7 @@ class DataProvider:
         image, label = self.data
         if self.training:
             images, label_batch = tf.train.shuffle_batch(
-            [preprocess_training(image, height=self.size[1], width=self.size[2]), label],
+            [image, label],
             batch_size=batch_size,
             num_threads=num_threads,
             capacity=min_queue_examples + 3 * batch_size,
@@ -227,11 +259,27 @@ def get_data_provider(name, training=True):
         __maybe_download(url, path,post_f)
         data_dir = os.path.join(path, 'cifar-100-batches-bin/')
         if training:
-            return DataProvider([os.path.join(data_dir, 'train.bin')],
-                                    50000, True, __read_cifar)
+            return DataProvider([os.path.join(data_dir, 'train.bin')],50000, True, __read_cifar)
         else:
-            return DataProvider([os.path.join(data_dir, 'test.bin')],
-                                10000, False, __read_cifar)
+            return DataProvider([os.path.join(data_dir, 'test.bin')],10000, False, __read_cifar)
+
+    elif name == 'MNIST':
+        data_dir= os.path.join(DATA_DIR,'MNIST')
+        # url = [URLs['MNIST_train_image'],URLs['MNIST_train_lable'],URLs['MNIST_test_image'],URLs['MNIST_test_label']]
+        # def post_f(f):
+        #     return gzip.GzipFile(f)
+        # for i in range(4):
+        #     __maybe_download(url[i], data_dir, post_f)
+        sss=[[os.path.join(data_dir, 'train-images.idx3-ubyte')],[os.path.join(data_dir, 'train-labels.idx1-ubyte')]]
+        ddd=os.path.exists(os.path.join(data_dir, 'train-images.idx3-ubyte'))
+        ddd2 = os.path.exists(os.path.join(data_dir, 'train-labels.idx1-ubyte'))
+        if training:
+            return DataProvider(__read_MNIST([[os.path.join(data_dir, 'train-images.idx3-ubyte')],[os.path.join(data_dir, 'train-labels.idx1-ubyte')]]),
+                                [55000, 28,28,1], True)
+        else:
+            return DataProvider(__read_MNIST([[os.path.join(data_dir, 't10k-images.idx3-ubyte')],[os.path.join(data_dir, 't10k-labels.idx1-ubyte')]]),
+                                [10000, 28,28, 1], False)
+
 
 def group_batch_images(x):
     sz = x.get_shape().as_list()

@@ -10,7 +10,7 @@ from data import *
 from evaluate import evaluate
 from tqdm import tqdm
 from tensorflow.python.framework import ops
-
+import matplotlib.pyplot as plt
 timestr = '-'.join(str(x) for x in list(tuple(datetime.now().timetuple())[:6]))
 MOVING_AVERAGE_DECAY = 0.997
 FLAGS = tf.app.flags.FLAGS
@@ -18,17 +18,17 @@ FLAGS = tf.app.flags.FLAGS
 # Basic model parameters.
 tf.app.flags.DEFINE_integer('batch_size', 64,
                             """Number of images to process in a batch.""")
-tf.app.flags.DEFINE_integer('num_epochs', 1,
+tf.app.flags.DEFINE_integer('num_epochs', 10,
                             """Number of epochs to train. -1 for unlimited""")
 tf.app.flags.DEFINE_float('learning_rate', 0.001,
                             """Initial learning rate used.""")
-tf.app.flags.DEFINE_string('model', 'BNN_cifar10',
+tf.app.flags.DEFINE_string('model', 'MNIST0_nodrop',  #BNN_MNIST0_nodrop
                            """Name of loaded model.""")
 tf.app.flags.DEFINE_string('save', timestr,
                            """Name of saved dir.""")
 tf.app.flags.DEFINE_string('load', None,
                            """Name of loaded dir.""")
-tf.app.flags.DEFINE_string('dataset', 'cifar10',
+tf.app.flags.DEFINE_string('dataset', 'MNIST',
                            """Name of dataset used.""")
 tf.app.flags.DEFINE_string('summary', True,
                            """Record summary.""")
@@ -73,7 +73,7 @@ def add_summaries(scalar_list=[], activation_list=[], var_list=[], grad_list=[],
                 tf.summary.image(var.op.name + '/kernels',group_batch_images(kernels), max_outputs=1)
     for var in var_list:
         if var is not None:
-            index = np.ones(shape=[len(var.get_shape().as_list()),],dtype=int)
+            index=np.array([1]*(len(var.get_shape().as_list())-2)+[0]+[1])
             ful = var.op.name  # full name
             for i in range(2):
                 tf.summary.scalar(ful.split('/')[0]+'/W'+str((index*i).tolist())+'/0/'+ful.split('/')[1], var[(index*i).tolist()])
@@ -89,7 +89,7 @@ def add_summaries(scalar_list=[], activation_list=[], var_list=[], grad_list=[],
             tf.summary.histogram(ful.split('/')[0]+'/1/'+ful.split('/')[1], Wbin)
     for Wbin in Wbin_list:
         if Wbin is not None:
-            index = np.ones(shape=[len(Wbin.get_shape().as_list()),],dtype=int)
+            index = np.array([1] * (len(Wbin.get_shape().as_list()) - 2) + [0] + [1])
             ful = Wbin.op.name  # full name
             for i in range(2):
                 tf.summary.scalar(ful.split('/')[0]+'/W'+str((index*i).tolist())+'/1/'+ful.split('/')[1], Wbin[(index*i).tolist()])
@@ -97,7 +97,7 @@ def add_summaries(scalar_list=[], activation_list=[], var_list=[], grad_list=[],
 
     for Wfluc in Wfluc_list:
         if Wfluc is not None:
-            index = np.ones(shape=[len(Wfluc.get_shape().as_list()), ], dtype=int)
+            index = np.array([1] * (len(Wfluc.get_shape().as_list()) - 2) + [0] + [1])
             ful = Wfluc.op.name  # full name
             for i in range(2):
                 tf.summary.scalar(ful.split('/')[0] + '/W' + str((index * i).tolist()) + '/2/' + ful.split('/')[1],
@@ -125,14 +125,14 @@ def train(model, data,
     # tf Graph input
     with tf.device('/cpu:0'):
         with tf.name_scope('data'):
-            x, yt = data.generate_batches(batch_size)
+            x, yt = data.next_batch(batch_size)
         global_step =  tf.get_variable('global_step', shape=[],dtype=tf.int64,
                              initializer=tf.constant_initializer(0),
                              trainable=False)
         tf.add_to_collection("Step",global_step)
 
-    use_for_coming_batch = [{}, {}]  # 순서대로 Wbin,Wfluc
-    tf.add_to_collection('use_for_coming_batch', use_for_coming_batch)
+    # use_for_coming_batch = [{}, {}]  # 순서대로 Wbin,Wfluc
+    # tf.add_to_collection('use_for_coming_batch', use_for_coming_batch)
     y = model(x, is_training=True)
     # Define loss and optimizer
     with tf.name_scope('objective'):
@@ -166,10 +166,13 @@ def train(model, data,
     list_W = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='L')
     list_Wbin = tf.get_collection('Binarized_Weight', scope='L')
     list_Wfluc = tf.get_collection('Fluctuated_Weight', scope='L')
+
     list_pre_Wbin = tf.get_collection('pre_Wbin', scope='L')
     list_pre_Wfluc = tf.get_collection('pre_Wfluc', scope='L')
+
     list_pre_Wbin_op = tf.get_collection('pre_Wbin_update_op', scope='L')
     list_pre_Wfluc_op = tf.get_collection('pre_Wfluc_update_op', scope='L')
+
     if FLAGS.summary:
         add_summaries( scalar_list=[accuracy, accuracy_avg, loss, loss_avg],
             activation_list=tf.get_collection(tf.GraphKeys.ACTIVATIONS),
@@ -201,17 +204,22 @@ def train(model, data,
     # print("list_pre_Wfluc:\n:", list_pre_Wfluc, '\nNum:', len(list_pre_Wfluc))
     # print("list_pre_Wbin_op:\n:", list_pre_Wbin_op, '\nNum:', len(list_pre_Wbin_op))
     # print("list_pre_Wfluc_op:\n:", list_pre_Wfluc_op, '\nNum:', len(list_pre_Wfluc_op))
-    keep=tf.get_collection('test')
-    test=tf.get_collection('test1')
+
     print('We start training..num of trainable paramaters: %d' %count_params(tf.trainable_variables()))
     best_acc=0
     for i in range(num_epochs):
         print('Started epoch %d' % (i+1))
+        count_num=np.array([0,0,0,0,0,0,0,0,0,0])
         for j in tqdm(range(num_batches)):
             #tf.add_to_collection('use_for_this_batch', save_for_next_batch)    #이 코드가 메모리 에러를 일으키는 주범이었다. dict은 알아서 메모리 관리 잘하고 있었음.
-            print("drift_factor=",sess.run(tf.get_collection("testt")))
-            list_run = sess.run(list_Wbin+list_Wfluc+[train_op, loss]+keep)  #train_op를 통해 업데이트를 하기 전에 list_Wbin,Wfluc에 있는 var들의 값을 save for next batch
+            # print("drift_factor=",sess.run(tf.get_collection("testt")))
+            list_run = sess.run(list_Wbin+list_Wfluc+[train_op, loss]+[x,yt])  #train_op를 통해 업데이트를 하기 전에 list_Wbin,Wfluc에 있는 var들의 값을 save for next batch
             #업데이트가 완료되었고, 방금 업데이트 하기 전에 저장한 값들을 다음 batch에 쓸거기 때문에 use_for_coming_batch로 넣어준다.
+            unique_elements,elements_counts=np.unique(list_run[-1],return_counts=True)
+            num_set=dict(zip(unique_elements,elements_counts))
+            for ii in range(10):
+                if num_set.__contains__(ii):
+                    count_num[ii]=count_num[ii]+num_set[ii]
             for index, value in enumerate(list_run[0:len(list_Wbin)]):
                 sess.run(list_pre_Wbin_op[index],{list_pre_Wbin[index]:value})
             for index, value in enumerate(list_run[len(list_Wbin):len(list_Wbin + list_Wfluc)]):
@@ -221,6 +229,15 @@ def train(model, data,
 
         step, acc_value, loss_value, summary = sess.run([global_step, accuracy_avg, loss_avg, summary_op])
 
+        # temp0, temp1 = sess.run([x, yt])
+        # aa = temp0[0]
+        # plt.imshow(temp0[0].reshape([28, 28]))
+        # plt.show()
+        # print(temp1[0])
+        # plt.imshow(temp0[3].reshape([28, 28]))
+        # plt.show()
+        # print(temp1[3])
+        print(["%d : "%i+str(count_num[i]) for i in range(10)]," Totral num: ",count_num.sum())
         print('Training - Accuracy: %.3f' % acc_value,'  Loss:%.3f'% loss_value)
 
         saver.save(sess, save_path=checkpoint_dir + '/model.ckpt', global_step=global_step)
@@ -277,7 +294,7 @@ def main(argv=None):  # pylint: disable=unused-argument
         gfile.Copy(model_file, FLAGS.checkpoint_dir + '/model.py')
     m = importlib.import_module('models.' + FLAGS.model)
     data = get_data_provider(FLAGS.dataset, training=True)
-    a=m.model
+
     train(m.model, data,
           batch_size=FLAGS.batch_size,
           checkpoint_dir=FLAGS.checkpoint_dir,

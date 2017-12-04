@@ -21,7 +21,7 @@ def evaluate(model, dataset,
         checkpoint_dir='./checkpoint'):
     with tf.Graph().as_default() as g:
         data = get_data_provider(dataset, training=False)
-        x, yt = data.generate_batches(batch_size)
+        x, yt = data.next_batch(batch_size)
         # is_training = tf.placeholder(tf.bool,[],name='is_training')
         # Build the Graph that computes the logits predictions
         y = model(x, is_training=False)

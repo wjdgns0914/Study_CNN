@@ -80,12 +80,13 @@ def fluctuate(x,scale=1):
             Wfluc_Set = update_element * fluc_Set * tf.cast(x <= 0, tf.float32)
             # fluctuation이 적용 된 최종 weight 값,Reset,set에 drift를 따로 적용하기 위해 pre_Wbin이 0보다 큰 부분,작은 부분, 두 부분으로 나누었다.
             step_col=tf.get_collection("Step")
-            if FLAGS.Drift and step_col!=[]: #and에 문제가 있었다.
+            if FLAGS.Drift and step_col!=[]:
                 batch_num = step_col[0]
                 drift_factor =tf.cast((1 + batch_num) / batch_num,dtype=tf.float32)
-                tf.add_to_collection("testt",drift_factor)
+
                 drift_scale = tf.cond(tf.equal(batch_num, 0), lambda: tf.constant(0.),     #tf.cast(tf.equal(batch_num, 0), dtype=tf.float32)
                                       lambda: tf.cast(0.09 * tf.log(drift_factor) / tf.log(tf.constant(10, dtype=tf.float32)), dtype=tf.float32))
+                tf.add_to_collection("testt", drift_scale)
             else:
                 drift_scale=tf.constant(0.)
             with tf.control_dependencies([drift_scale]):
