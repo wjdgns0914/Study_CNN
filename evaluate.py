@@ -5,10 +5,11 @@ from __future__ import print_function
 from datetime import datetime
 import math
 import time
-
+from models.MNIST0_nodrop import *
 import numpy as np
 import tensorflow as tf
 from data import get_data_provider
+import matplotlib.pyplot as plt
 """
 질문1:sess를 인자로 왜 받아올까? 내가 더한거였다..삭제.
 질문2:왜 세션을 한번 더 여는걸까?
@@ -17,7 +18,7 @@ from data import get_data_provider
     ->이 이유는 아닐듯, 왜냐면 그럴거면 바로 evaluate쓸 때의 파라미터로 evaluation하면 되니까.
 """
 def evaluate(model, dataset,
-        batch_size=128,
+        batch_size=100,
         checkpoint_dir='./checkpoint'):
     with tf.Graph().as_default() as g:
         data = get_data_provider(dataset, training=False)
@@ -29,7 +30,8 @@ def evaluate(model, dataset,
         # Calculate predictions.
         loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(labels=yt, logits=y))
         accuracy = tf.reduce_mean(tf.cast(tf.nn.in_top_k(y,yt,1), tf.float32))
-
+        # cost = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(labels=Y, logits=logits))
+        # accuracy = tf.reduce_mean(tf.cast(tf.nn.in_top_k(logits, Y, 1), tf.float32))
         # Restore the moving average version of the learned variables for eval.
         #variable_averages = tf.train.ExponentialMovingAverage(MOVING_AVERAGE_DECAY)
         #variables_to_restore = variable_averages.variables_to_restore()
@@ -51,18 +53,29 @@ def evaluate(model, dataset,
 
          # Start the queue runners.
         coord = tf.train.Coordinator()
+        # threads = tf.train.start_queue_runners(sess=sess, coord=coord)
+
         try:
             threads = []
             for qr in tf.get_collection(tf.GraphKeys.QUEUE_RUNNERS):
-             threads.extend(qr.create_threads(sess, coord=coord, daemon=True,
-                                       start=True))
+                threads.extend(qr.create_threads(sess, coord=coord, daemon=True,start=True))
 
             num_batches = int(math.ceil(data.size[0] / batch_size))
             total_acc = 0  # Counts the number of correct predictions per batch.
             total_loss = 0 # Sum the loss of predictions per batch.
             step = 0
             while step < num_batches and not coord.should_stop():
-              acc_val, loss_val = sess.run([accuracy, loss])
+
+              acc_val, loss_val,xval,yval = sess.run([accuracy, loss,x,yt])
+              # fig, axes = plt.subplots(8, 8)
+              # fig.subplots_adjust(hspace=0.3, wspace=0.3)
+              # for i, ax in enumerate(axes.flat):
+              #     ax.imshow(xval[i].reshape([28, 28]), cmap='binary')
+              #     ax.set_xticks([])
+              #     ax.set_yticks([])
+              #     ax.set_xlabel(yval[i])
+              # plt.show()
+
               total_acc += acc_val
               total_loss += loss_val
               step += 1
@@ -80,16 +93,16 @@ def evaluate(model, dataset,
         return total_acc, total_loss
 
 def main(argv=None):  # pylint: disable=unused-argument
-  evaluate()
-
+  a,c=evaluate(model=model,dataset=FLAGS.dataset,checkpoint_dir=FLAGS.checkpoint_dir)
+  print(a,c)
 
 if __name__ == '__main__':
   FLAGS = tf.app.flags.FLAGS
-  tf.app.flags.DEFINE_string('checkpoint_dir', './results/model',
+  tf.app.flags.DEFINE_string('checkpoint_dir', './results/2017-12-5-18-14-34',
                              """Directory where to read model checkpoints.""")
-  tf.app.flags.DEFINE_string('dataset', 'cifar10',
+  tf.app.flags.DEFINE_string('dataset', 'MNIST',
                              """Name of dataset used.""")
-  tf.app.flags.DEFINE_string('model_name', 'model',
+  tf.app.flags.DEFINE_string('model_name', 'MNIST0_nodrop',
                              """Name of loaded model.""")
   tf.app.flags.DEFINE_string('Drift', False,
                              """Drift or Not.""")

@@ -14,6 +14,7 @@ import matplotlib.pyplot as plt
 timestr = '-'.join(str(x) for x in list(tuple(datetime.now().timetuple())[:6]))
 MOVING_AVERAGE_DECAY = 0.997
 FLAGS = tf.app.flags.FLAGS
+tf.set_random_seed(777)  # reproducibility
 
 # Basic model parameters.
 tf.app.flags.DEFINE_integer('batch_size', 64,
@@ -30,7 +31,7 @@ tf.app.flags.DEFINE_string('load', None,
                            """Name of loaded dir.""")
 tf.app.flags.DEFINE_string('dataset', 'MNIST',
                            """Name of dataset used.""")
-tf.app.flags.DEFINE_string('summary', True,
+tf.app.flags.DEFINE_string('summary', False,
                            """Record summary.""")
 tf.app.flags.DEFINE_string('Drift', True,
                            """Drift or Not.""")
@@ -123,13 +124,13 @@ def train(model, data,
           checkpoint_dir='./checkpoint',
           num_epochs=-1):
     # tf Graph input
-    with tf.device('/cpu:0'):
-        with tf.name_scope('data'):
-            x, yt = data.next_batch(batch_size)
-        global_step =  tf.get_variable('global_step', shape=[],dtype=tf.int64,
-                             initializer=tf.constant_initializer(0),
-                             trainable=False)
-        tf.add_to_collection("Step",global_step)
+
+    with tf.name_scope('data'):
+        x, yt = data.next_batch(batch_size)
+    global_step =  tf.get_variable('global_step', shape=[],dtype=tf.int64,
+                         initializer=tf.constant_initializer(0),
+                         trainable=False)
+    tf.add_to_collection("Step",global_step)
 
     # use_for_coming_batch = [{}, {}]  # 순서대로 Wbin,Wfluc
     # tf.add_to_collection('use_for_coming_batch', use_for_coming_batch)
@@ -141,7 +142,7 @@ def train(model, data,
     opt = tf.contrib.layers.optimize_loss(loss, global_step, learning_rate, 'Adam',
                                           gradient_noise_scale=None, gradient_multipliers=None,
                                           clip_gradients=None, #moving_average_decay=0.9,
-                                          learning_rate_decay_fn=learning_rate_decay_fn, update_ops=None, variables=None, name=None)
+                                           update_ops=None, variables=None, name=None)  #learning_rate_decay_fn=learning_rate_decay_fn,
         #grads = opt.compute_gradients(loss)
         #apply_gradient_op = opt.apply_gradients(grads, global_step=global_step)
     print("Definite Moving Average...")
@@ -174,10 +175,9 @@ def train(model, data,
     list_pre_Wfluc_op = tf.get_collection('pre_Wfluc_update_op', scope='L')
 
     if FLAGS.summary:
-        add_summaries( scalar_list=[accuracy, accuracy_avg, loss, loss_avg],
+        add_summaries(scalar_list=[accuracy, accuracy_avg, loss, loss_avg],
             activation_list=tf.get_collection(tf.GraphKeys.ACTIVATIONS),
-            var_list=list_W,
-            Wbin_list=list_Wbin,Wfluc_list=list_Wfluc)
+            var_list=list_W,Wbin_list=list_Wbin,Wfluc_list=list_Wfluc)
             # grad_list=grads)
 
     summary_op = tf.summary.merge_all()
@@ -197,7 +197,7 @@ def train(model, data,
 
     num_batches = int(data.size[0] / batch_size)
     print("Check the collections...")
-    # print("list_W:\n",list_W,'\nNum:',len(list_W))
+    print("list_W:\n",list_W,'\nNum:',len(list_W))
     # print("list_Wbin:\n:",list_Wbin,'\nNum:',len(list_Wbin))
     # print("list_Wfluc:\n:",list_Wfluc,'\nNum:',len(list_Wfluc))
     # print("list_pre_Wbin:\n:", list_pre_Wbin, '\nNum:', len(list_pre_Wbin))
@@ -215,6 +215,14 @@ def train(model, data,
             # print("drift_factor=",sess.run(tf.get_collection("testt")))
             list_run = sess.run(list_Wbin+list_Wfluc+[train_op, loss]+[x,yt])  #train_op를 통해 업데이트를 하기 전에 list_Wbin,Wfluc에 있는 var들의 값을 save for next batch
             #업데이트가 완료되었고, 방금 업데이트 하기 전에 저장한 값들을 다음 batch에 쓸거기 때문에 use_for_coming_batch로 넣어준다.
+            # if i==2:
+            #     aa = list_run[-2][0]
+            #     plt.imshow(list_run[-2][0].reshape([28, 28]))
+            #     plt.show()
+            #     print(list_run[-1][0])
+            #     plt.imshow(list_run[-2][3].reshape([28, 28]))
+            #     plt.show()
+            #     print(list_run[-1][3])
             unique_elements,elements_counts=np.unique(list_run[-1],return_counts=True)
             num_set=dict(zip(unique_elements,elements_counts))
             for ii in range(10):
@@ -224,11 +232,14 @@ def train(model, data,
                 sess.run(list_pre_Wbin_op[index],{list_pre_Wbin[index]:value})
             for index, value in enumerate(list_run[len(list_Wbin):len(list_Wbin + list_Wfluc)]):
                 sess.run(list_pre_Wfluc_op[index],{list_pre_Wfluc[index]:value})
-            if j%10==0:
-                summary_writer.add_summary(sess.run(summary_op), global_step=sess.run(global_step))
+            # if j%10==0:
+            #     summary_writer.add_summary(sess.run(summary_op), global_step=sess.run(global_step))
 
         step, acc_value, loss_value, summary = sess.run([global_step, accuracy_avg, loss_avg, summary_op])
-
+        """
+        20171204:avg기능을 빼고 코드를 돌려보니까 training set에서의 정확도가 98퍼가 되었다가 96퍼가 되었다가 왔다갔다한다.
+        이유: 위에서 accuracy 를 돌릴 때 데이터가 64개밖에 안쓰인다, 그래서 정확도의 격차가 좀 있었던 것
+        """
         # temp0, temp1 = sess.run([x, yt])
         # aa = temp0[0]
         # plt.imshow(temp0[0].reshape([28, 28]))
@@ -242,7 +253,6 @@ def train(model, data,
 
         saver.save(sess, save_path=checkpoint_dir + '/model.ckpt', global_step=global_step)
         test_acc, test_loss = evaluate(model, FLAGS.dataset,
-                                       batch_size=batch_size,
                                        checkpoint_dir=checkpoint_dir)
         # log_dir=log_dir)
         print('Test     - Accuracy: %.3f' % test_acc, '  Loss:%.3f' % test_loss)
@@ -254,8 +264,8 @@ def train(model, data,
         summary_out.ParseFromString(summary)
         summary_out.value.add(tag='accuracy/test', simple_value=test_acc)
         summary_out.value.add(tag='loss/test', simple_value=test_loss)
-        summary_writer.add_summary(summary_out, step)
-        summary_writer.flush()
+        # summary_writer.add_summary(summary_out, step)
+        # summary_writer.flush()
 
     # When done, ask the threads to stop.
     coord.request_stop()
@@ -332,4 +342,77 @@ if __name__ == '__main__':
     # print(callable(main))
     # print(locals())
     tf.app.run()
+
+
+"""
+Started epoch 1
+100%|██████████| 859/859 [00:26<00:00, 32.33it/s]
+['0 : 5465', '1 : 6181', '2 : 5435', '3 : 5592', '4 : 5363', '5 : 4967', '6 : 5426', '7 : 5742', '8 : 5357', '9 : 5448']  Totral num:  54976
+Training - Accuracy: 0.979   Loss:0.061
+Test     - Accuracy: 0.982   Loss:0.056
+
+Started epoch 2
+100%|██████████| 859/859 [00:24<00:00, 34.39it/s]
+['0 : 5360', '1 : 6209', '2 : 5491', '3 : 5671', '4 : 5333', '5 : 4969', '6 : 5471', '7 : 5688', '8 : 5321', '9 : 5463']  Totral num:  54976
+Training - Accuracy: 0.984   Loss:0.049
+Test     - Accuracy: 0.986   Loss:0.048
+Best     - Accuracy: 0.986
+
+Started epoch 3
+100%|██████████| 859/859 [00:24<00:00, 34.49it/s]
+['0 : 5431', '1 : 6201', '2 : 5457', '3 : 5579', '4 : 5325', '5 : 4953', '6 : 5384', '7 : 5761', '8 : 5402', '9 : 5483']  Totral num:  54976
+Training - Accuracy: 0.988   Loss:0.038
+Test     - Accuracy: 0.989   Loss:0.038
+Best     - Accuracy: 0.989
+
+Started epoch 4
+100%|██████████| 859/859 [00:24<00:00, 34.69it/s]
+['0 : 5435', '1 : 6217', '2 : 5426', '3 : 5638', '4 : 5361', '5 : 4973', '6 : 5461', '7 : 5728', '8 : 5269', '9 : 5468']  Totral num:  54976
+Training - Accuracy: 0.990   Loss:0.031
+Test     - Accuracy: 0.982   Loss:0.060
+Best     - Accuracy: 0.989
+
+Started epoch 5
+100%|██████████| 859/859 [00:24<00:00, 35.39it/s]
+['0 : 5428', '1 : 6196', '2 : 5431', '3 : 5618', '4 : 5380', '5 : 4950', '6 : 5415', '7 : 5730', '8 : 5399', '9 : 5429']  Totral num:  54976
+Training - Accuracy: 0.990   Loss:0.031
+Test     - Accuracy: 0.988   Loss:0.047
+Best     - Accuracy: 0.989
+
+Started epoch 6
+100%|██████████| 859/859 [00:24<00:00, 35.12it/s]
+['0 : 5458', '1 : 6147', '2 : 5466', '3 : 5636', '4 : 5343', '5 : 4974', '6 : 5396', '7 : 5763', '8 : 5360', '9 : 5433']  Totral num:  54976
+Training - Accuracy: 0.992   Loss:0.026
+Test     - Accuracy: 0.989   Loss:0.038
+Best     - Accuracy: 0.989
+
+Started epoch 7
+100%|██████████| 859/859 [00:24<00:00, 34.86it/s]
+['0 : 5412', '1 : 6097', '2 : 5494', '3 : 5635', '4 : 5375', '5 : 4956', '6 : 5417', '7 : 5758', '8 : 5360', '9 : 5472']  Totral num:  54976
+Training - Accuracy: 0.993   Loss:0.024
+Test     - Accuracy: 0.988   Loss:0.044
+Best     - Accuracy: 0.989
+
+Started epoch 8
+100%|██████████| 859/859 [00:24<00:00, 35.05it/s]
+['0 : 5429', '1 : 6232', '2 : 5414', '3 : 5593', '4 : 5366', '5 : 4958', '6 : 5422', '7 : 5732', '8 : 5373', '9 : 5457']  Totral num:  54976
+Training - Accuracy: 0.994   Loss:0.020
+Test     - Accuracy: 0.989   Loss:0.051
+Best     - Accuracy: 0.989
+
+Started epoch 9
+100%|██████████| 859/859 [00:25<00:00, 34.20it/s]
+['0 : 5447', '1 : 6131', '2 : 5459', '3 : 5604', '4 : 5335', '5 : 4987', '6 : 5432', '7 : 5774', '8 : 5354', '9 : 5453']  Totral num:  54976
+Training - Accuracy: 0.994   Loss:0.019
+Test     - Accuracy: 0.989   Loss:0.042
+Best     - Accuracy: 0.989
+
+Started epoch 10
+100%|██████████| 859/859 [00:24<00:00, 35.30it/s]
+['0 : 5411', '1 : 6163', '2 : 5490', '3 : 5622', '4 : 5351', '5 : 4931', '6 : 5447', '7 : 5748', '8 : 5391', '9 : 5422']  Totral num:  54976
+Training - Accuracy: 0.994   Loss:0.021
+Test     - Accuracy: 0.989   Loss:0.047
+Best     - Accuracy: 0.989
+
+"""
 

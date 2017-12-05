@@ -2,21 +2,20 @@ import tensorflow as tf
 import math
 from tensorflow.python.training import moving_averages
 from tensorflow.contrib.framework import get_name_scope
-from numpy import zeros
-from numpy import ones
+import numpy as np
 FLAGS = tf.app.flags.FLAGS
-print(FLAGS.Drift)
-print(FLAGS.Variation)
-if FLAGS.Variation==True:
-    Reset_Meanmean, Reset_Meanstd = 0., 0.1707
-    Reset_Stdmean, Reset_Stdstd = 0.0942, 0.01884
-    Set_Meanmean, Set_Meanstd = 0., 0.1538
-    Set_Stdmean, Set_Stdstd = 0.1311, 0.06894
-else:
-    Reset_Meanmean, Reset_Meanstd = 0., 0.0000000001
-    Reset_Stdmean, Reset_Stdstd = 0., 0.
-    Set_Meanmean, Set_Meanstd = 0., 0.0000000001
-    Set_Stdmean, Set_Stdstd = 0., 0.
+# print(FLAGS.Drift)
+# print(FLAGS.Variation)
+# if FLAGS.Variation==True:
+#     Reset_Meanmean, Reset_Meanstd = 0., 0.1707
+#     Reset_Stdmean, Reset_Stdstd = 0.0942, 0.01884
+#     Set_Meanmean, Set_Meanstd = 0., 0.1538
+#     Set_Stdmean, Set_Stdstd = 0.1311, 0.06894
+# else:
+#     Reset_Meanmean, Reset_Meanstd = 0., 0.0000000001
+#     Reset_Stdmean, Reset_Stdstd = 0., 0.
+#     Set_Meanmean, Set_Meanstd = 0., 0.0000000001
+#     Set_Stdmean, Set_Stdstd = 0., 0.
 
 def binarize(x):
     """
@@ -166,7 +165,9 @@ def SpatialConvolution(nOutputPlane, kW, kH, dW=1, dH=1,
 def Affine(nOutputPlane, bias=True, name=None, reuse=None):
     def affineLayer(x, is_training=True):
         with tf.variable_scope(values=[x], name_or_scope=name, default_name='Affine', reuse=reuse):
-            reshaped = tf.reshape(x, [x.get_shape().as_list()[0], -1])
+
+            temp=x.get_shape().as_list()
+            reshaped = tf.reshape(x, [-1,np.array(temp[1:]).prod()])
             nInputPlane = reshaped.get_shape().as_list()[1]
             w = tf.get_variable('weight', [nInputPlane, nOutputPlane], initializer=tf.contrib.layers.xavier_initializer())
             output = tf.matmul(reshaped, w)
