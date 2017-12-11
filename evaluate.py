@@ -5,11 +5,9 @@ from __future__ import print_function
 from datetime import datetime
 import math
 import time
-from models.MNIST0_nodrop import *
 import numpy as np
 import tensorflow as tf
 from data import get_data_provider
-import matplotlib.pyplot as plt
 """
 질문1:sess를 인자로 왜 받아올까? 내가 더한거였다..삭제.
 질문2:왜 세션을 한번 더 여는걸까?
@@ -28,13 +26,11 @@ def evaluate(model, dataset,
         y = model(x, is_training=False)
 
         # Calculate predictions.
-        loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(labels=yt, logits=y))
-        accuracy = tf.reduce_mean(tf.cast(tf.nn.in_top_k(y,yt,1), tf.float32))
-        # cost = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(labels=Y, logits=logits))
-        # accuracy = tf.reduce_mean(tf.cast(tf.nn.in_top_k(logits, Y, 1), tf.float32))
-        # Restore the moving average version of the learned variables for eval.
-        #variable_averages = tf.train.ExponentialMovingAverage(MOVING_AVERAGE_DECAY)
-        #variables_to_restore = variable_averages.variables_to_restore()
+        # loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(labels=yt, logits=y))
+        # accuracy = tf.reduce_mean(tf.cast(tf.nn.in_top_k(y,yt,1), tf.float32))
+        yt_one=tf.one_hot(yt,10)
+        loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=yt_one, logits=y))
+        accuracy=tf.reduce_mean(tf.cast(tf.equal(yt, tf.cast(tf.argmax(y, dimension=1),dtype=tf.int32)),dtype=tf.float32))
         saver = tf.train.Saver()#variables_to_restore
         # Configure options for session
         sess = tf.Session(
@@ -67,19 +63,9 @@ def evaluate(model, dataset,
             while step < num_batches and not coord.should_stop():
 
               acc_val, loss_val,xval,yval = sess.run([accuracy, loss,x,yt])
-              # fig, axes = plt.subplots(8, 8)
-              # fig.subplots_adjust(hspace=0.3, wspace=0.3)
-              # for i, ax in enumerate(axes.flat):
-              #     ax.imshow(xval[i].reshape([28, 28]), cmap='binary')
-              #     ax.set_xticks([])
-              #     ax.set_yticks([])
-              #     ax.set_xlabel(yval[i])
-              # plt.show()
-
               total_acc += acc_val
               total_loss += loss_val
               step += 1
-
             # Compute precision and loss
             total_acc /= num_batches
             total_loss /= num_batches
@@ -93,8 +79,9 @@ def evaluate(model, dataset,
         return total_acc, total_loss
 
 def main(argv=None):  # pylint: disable=unused-argument
-  a,c=evaluate(model=model,dataset=FLAGS.dataset,checkpoint_dir=FLAGS.checkpoint_dir)
-  print(a,c)
+  pass
+  # a,c=evaluate(model=model,dataset=FLAGS.dataset,checkpoint_dir=FLAGS.checkpoint_dir)
+  # print(a,c)
 
 if __name__ == '__main__':
   FLAGS = tf.app.flags.FLAGS

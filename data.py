@@ -14,7 +14,6 @@ from six.moves import urllib
 # import glob
 # import re
 
-
 DATA_DIR = './Datasets/'
 URLs = {
     'cifar10': 'http://www.cs.toronto.edu/~kriz/cifar-10-binary.tar.gz',
@@ -112,7 +111,7 @@ def __read_cifar(filenames, shuffle=True, cifar100=False):
   return tf.cast(image, tf.float32), label
 
 
-def __read_MNIST(training=True):
+def __read_MNIST(mnist,training=True):
     """Reads and parses examples from MNIST data files."""
     # filename_queue_image = tf.train.string_input_producer(filenames[0], shuffle=shuffle, num_epochs=None)
     # filename_queue_label = tf.train.string_input_producer(filenames[1], shuffle=shuffle, num_epochs=None)
@@ -248,7 +247,7 @@ MNIST dataset을 추가하려면 여기다가 하면 될거 같다.
 여기서 이게 왜 유용하냐면 단순히 데이터셋을 반환하면 그걸 또 shuffle해줘야하잖아?
 그니까 셔플기능까지 넣은 데이터셋을 반환하고싶은거다. 마치 텐서플로우에 내장되어있는 dataprovider처럼!
 """
-def get_data_provider(name, training=True):
+def get_data_provider(name, mnist=None,training=True):
     if name == 'cifar10':
         path = os.path.join(DATA_DIR,'cifar10')
         url = URLs['cifar10']
@@ -289,9 +288,9 @@ def get_data_provider(name, training=True):
         #                         [10000, 28,28, 1], False)
         """
         if training:
-            return DataProvider(__read_MNIST(),size=[55000, 28,28, 1], training=True,MNIST=True)
+            return DataProvider(__read_MNIST(mnist=mnist),size=[55000, 28,28, 1], training=True,MNIST=True)
         else:
-            return DataProvider(__read_MNIST(training=False),size=[10000, 28,28, 1],training=False,MNIST=True)
+            return DataProvider(__read_MNIST(mnist=mnist,training=False),size=[10000, 28,28, 1],training=False,MNIST=True)
 
 def group_batch_images(x):
     sz = x.get_shape().as_list()

@@ -19,23 +19,23 @@ tf.set_random_seed(777)  # reproducibility
 # Basic model parameters.
 tf.app.flags.DEFINE_integer('batch_size', 64,
                             """Number of images to process in a batch.""")
-tf.app.flags.DEFINE_integer('num_epochs', 10,
+tf.app.flags.DEFINE_integer('num_epochs', 80,
                             """Number of epochs to train. -1 for unlimited""")
 tf.app.flags.DEFINE_float('learning_rate', 0.001,
                             """Initial learning rate used.""")
-tf.app.flags.DEFINE_string('model', 'MNIST0_nodrop',  #BNN_MNIST0_nodrop
+tf.app.flags.DEFINE_string('model', 'BNN_MNIST0_nodrop',  #BNN_MNIST0_nodrop
                            """Name of loaded model.""")
-tf.app.flags.DEFINE_string('save', timestr,
+tf.app.flags.DEFINE_string('save', timestr+"HardTanh_Var_Drift",
                            """Name of saved dir.""")
 tf.app.flags.DEFINE_string('load', None,
                            """Name of loaded dir.""")
-tf.app.flags.DEFINE_string('dataset', 'MNIST',
+tf.app.flags.DEFINE_string('dataset', 'cifar10',
                            """Name of dataset used.""")
-tf.app.flags.DEFINE_string('summary', False,
+tf.app.flags.DEFINE_string('summary', True,
                            """Record summary.""")
-tf.app.flags.DEFINE_string('Drift', True,
+tf.app.flags.DEFINE_string('Drift', False,
                            """Drift or Not.""")
-tf.app.flags.DEFINE_string('Variation', True,
+tf.app.flags.DEFINE_string('Variation', False,
                            """Variation or Not.""")
 tf.app.flags.DEFINE_string('log', 'ERROR',
                            'The threshold for what messages will be logged '
@@ -74,10 +74,12 @@ def add_summaries(scalar_list=[], activation_list=[], var_list=[], grad_list=[],
                 tf.summary.image(var.op.name + '/kernels',group_batch_images(kernels), max_outputs=1)
     for var in var_list:
         if var is not None:
-            index=np.array([1]*(len(var.get_shape().as_list())-2)+[0]+[1])
+            # index=np.array([1]*(len(var.get_shape().as_list())-2)+[0]+[1])
+
             ful = var.op.name  # full name
             for i in range(2):
-                tf.summary.scalar(ful.split('/')[0]+'/W'+str((index*i).tolist())+'/0/'+ful.split('/')[1], var[(index*i).tolist()])
+                index=[np.random.randint(j) for j in var.get_shape().as_list()]
+                tf.summary.scalar(ful.split('/')[0]+'/W'+str(index)+'/0/'+ful.split('/')[1], var[index])
 
     for activation in activation_list:
         if activation is not None:
@@ -90,19 +92,21 @@ def add_summaries(scalar_list=[], activation_list=[], var_list=[], grad_list=[],
             tf.summary.histogram(ful.split('/')[0]+'/1/'+ful.split('/')[1], Wbin)
     for Wbin in Wbin_list:
         if Wbin is not None:
-            index = np.array([1] * (len(Wbin.get_shape().as_list()) - 2) + [0] + [1])
+            # index = np.array([1] * (len(Wbin.get_shape().as_list()) - 2) + [0] + [1])
             ful = Wbin.op.name  # full name
             for i in range(2):
-                tf.summary.scalar(ful.split('/')[0]+'/W'+str((index*i).tolist())+'/1/'+ful.split('/')[1], Wbin[(index*i).tolist()])
+                index = [np.random.randint(j) for j in Wbin.get_shape().as_list()]
+                tf.summary.scalar(ful.split('/')[0]+'/W'+str(index)+'/1/'+ful.split('/')[1], Wbin[index])
 
 
     for Wfluc in Wfluc_list:
         if Wfluc is not None:
-            index = np.array([1] * (len(Wfluc.get_shape().as_list()) - 2) + [0] + [1])
+            # index = np.array([1] * (len(Wfluc.get_shape().as_list()) - 2) + [0] + [1])
             ful = Wfluc.op.name  # full name
             for i in range(2):
-                tf.summary.scalar(ful.split('/')[0] + '/W' + str((index * i).tolist()) + '/2/' + ful.split('/')[1],
-                                  Wfluc[(index * i).tolist()])
+                index = [np.random.randint(j) for j in Wfluc.get_shape().as_list()]
+                tf.summary.scalar(ful.split('/')[0] + '/W' + str(index) + '/2/' + ful.split('/')[1],
+                                  Wfluc[index])
             #tf.summary.scalar(activation.op.name + '/sparsity', tf.nn.zero_fraction(activation))
 
 ##LR을 decay시켜주는 함수
@@ -137,8 +141,10 @@ def train(model, data,
     y = model(x, is_training=True)
     # Define loss and optimizer
     with tf.name_scope('objective'):
-        loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(labels=yt, logits=y))
-        accuracy = tf.reduce_mean(tf.cast(tf.nn.in_top_k(y, yt, 1), tf.float32))
+        yt_one=tf.one_hot(yt,10)
+        loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=yt_one, logits=y))
+        accuracy=tf.reduce_mean(tf.cast(tf.equal(yt, tf.cast(tf.argmax(y, dimension=1),dtype=tf.int32)),dtype=tf.float32))
+        # accuracy = tf.reduce_mean(tf.cast(tf.nn.in_top_k(y, yt, 1), tf.float32))
     opt = tf.contrib.layers.optimize_loss(loss, global_step, learning_rate, 'Adam',
                                           gradient_noise_scale=None, gradient_multipliers=None,
                                           clip_gradients=None, #moving_average_decay=0.9,
@@ -198,23 +204,27 @@ def train(model, data,
     num_batches = int(data.size[0] / batch_size)
     print("Check the collections...")
     print("list_W:\n",list_W,'\nNum:',len(list_W))
-    # print("list_Wbin:\n:",list_Wbin,'\nNum:',len(list_Wbin))
-    # print("list_Wfluc:\n:",list_Wfluc,'\nNum:',len(list_Wfluc))
+    print("list_Wbin:\n:",list_Wbin,'\nNum:',len(list_Wbin))
+    print("list_Wfluc:\n:",list_Wfluc,'\nNum:',len(list_Wfluc))
     # print("list_pre_Wbin:\n:", list_pre_Wbin, '\nNum:', len(list_pre_Wbin))
     # print("list_pre_Wfluc:\n:", list_pre_Wfluc, '\nNum:', len(list_pre_Wfluc))
-    # print("list_pre_Wbin_op:\n:", list_pre_Wbin_op, '\nNum:', len(list_pre_Wbin_op))
-    # print("list_pre_Wfluc_op:\n:", list_pre_Wfluc_op, '\nNum:', len(list_pre_Wfluc_op))
+    print("list_pre_Wbin_op:\n:", list_pre_Wbin_op, '\nNum:', len(list_pre_Wbin_op))
+    print("list_pre_Wfluc_op:\n:", list_pre_Wfluc_op, '\nNum:', len(list_pre_Wfluc_op))
 
     print('We start training..num of trainable paramaters: %d' %count_params(tf.trainable_variables()))
     best_acc=0
     for i in range(num_epochs):
+        file = open(FLAGS.checkpoint_dir + "/model.py", "a")
+        print('"""', file=file)
         print('Started epoch %d' % (i+1))
+        print('Started epoch %d' % (i + 1),file=file)
         count_num=np.array([0,0,0,0,0,0,0,0,0,0])
         for j in tqdm(range(num_batches)):
             #tf.add_to_collection('use_for_this_batch', save_for_next_batch)    #이 코드가 메모리 에러를 일으키는 주범이었다. dict은 알아서 메모리 관리 잘하고 있었음.
             # print("drift_factor=",sess.run(tf.get_collection("testt")))
-            list_run = sess.run(list_Wbin+list_Wfluc+[train_op, loss]+[x,yt])  #train_op를 통해 업데이트를 하기 전에 list_Wbin,Wfluc에 있는 var들의 값을 save for next batch
-            #업데이트가 완료되었고, 방금 업데이트 하기 전에 저장한 값들을 다음 batch에 쓸거기 때문에 use_for_coming_batch로 넣어준다.
+            list_run = sess.run(list_Wbin+list_Wfluc+[train_op, loss]+[y,yt])  #train_op를 통해 업데이트를 하기 전에 list_Wbin,Wfluc에 있는 var들의 값을 save for next batch
+            # if j>38 and j<40:
+            #     print("prediction:",list_run[-2],"  correct:",list_run[-1])
             # if i==2:
             #     aa = list_run[-2][0]
             #     plt.imshow(list_run[-2][0].reshape([28, 28]))
@@ -228,12 +238,13 @@ def train(model, data,
             for ii in range(10):
                 if num_set.__contains__(ii):
                     count_num[ii]=count_num[ii]+num_set[ii]
-            for index, value in enumerate(list_run[0:len(list_Wbin)]):
-                sess.run(list_pre_Wbin_op[index],{list_pre_Wbin[index]:value})
-            for index, value in enumerate(list_run[len(list_Wbin):len(list_Wbin + list_Wfluc)]):
-                sess.run(list_pre_Wfluc_op[index],{list_pre_Wfluc[index]:value})
-            # if j%10==0:
-            #     summary_writer.add_summary(sess.run(summary_op), global_step=sess.run(global_step))
+            if FLAGS.Variation:
+                for index, value in enumerate(list_run[0:len(list_Wbin)]):
+                    sess.run(list_pre_Wbin_op[index],{list_pre_Wbin[index]:value})
+                for index, value in enumerate(list_run[len(list_Wbin):len(list_Wbin + list_Wfluc)]):
+                    sess.run(list_pre_Wfluc_op[index],{list_pre_Wfluc[index]:value})
+            if j%10==0:
+                summary_writer.add_summary(sess.run(summary_op), global_step=sess.run(global_step))
 
         step, acc_value, loss_value, summary = sess.run([global_step, accuracy_avg, loss_avg, summary_op])
         """
@@ -249,25 +260,32 @@ def train(model, data,
         # plt.show()
         # print(temp1[3])
         print(["%d : "%i+str(count_num[i]) for i in range(10)]," Totral num: ",count_num.sum())
+        print(["%d : " % i + str(count_num[i]) for i in range(10)], " Totral num: ", count_num.sum(),file=file)
         print('Training - Accuracy: %.3f' % acc_value,'  Loss:%.3f'% loss_value)
+        print('Training - Accuracy: %.3f' % acc_value, '  Loss:%.3f' % loss_value,file=file)
 
         saver.save(sess, save_path=checkpoint_dir + '/model.ckpt', global_step=global_step)
         test_acc, test_loss = evaluate(model, FLAGS.dataset,
                                        checkpoint_dir=checkpoint_dir)
         # log_dir=log_dir)
         print('Test     - Accuracy: %.3f' % test_acc, '  Loss:%.3f' % test_loss)
+        print('Test     - Accuracy: %.3f' % test_acc, '  Loss:%.3f' % test_loss,file=file)
         if best_acc<test_acc:
             best_acc=test_acc
             saver.save(sess, save_path=checkpoint_dir + '/best_model.ckpt', global_step=global_step)
         print('Best     - Accuracy: %.3f' % best_acc)
+        print('Best     - Accuracy: %.3f' % best_acc,file=file)
         summary_out = tf.Summary()
         summary_out.ParseFromString(summary)
         summary_out.value.add(tag='accuracy/test', simple_value=test_acc)
         summary_out.value.add(tag='loss/test', simple_value=test_loss)
-        # summary_writer.add_summary(summary_out, step)
-        # summary_writer.flush()
+        summary_writer.add_summary(summary_out, step)
+        summary_writer.flush()
+        print('"""', file=file)
+        file.close()
 
     # When done, ask the threads to stop.
+
     coord.request_stop()
     coord.join(threads)
     coord.clear_stop()
@@ -303,6 +321,11 @@ def main(argv=None):  # pylint: disable=unused-argument
         assert gfile.Exists(model_file), 'no model file named: ' + model_file
         gfile.Copy(model_file, FLAGS.checkpoint_dir + '/model.py')
     m = importlib.import_module('models.' + FLAGS.model)
+    # if FLAGS.dataset=="MNIST":
+    #     from tensorflow.examples.tutorials.mnist import input_data
+    #     mnist = input_data.read_data_sets("Datasets/MNIST", one_hot=False)
+    # else:
+    #     mnist = None
     data = get_data_provider(FLAGS.dataset, training=True)
 
     train(m.model, data,
@@ -310,6 +333,7 @@ def main(argv=None):  # pylint: disable=unused-argument
           checkpoint_dir=FLAGS.checkpoint_dir,
           log_dir=FLAGS.log_dir,
           num_epochs=FLAGS.num_epochs)
+
 """
 
 설명1:여기서부터 설명한다,일단 이 코드를 실행하면 위에서부터 라인바이라인 실행이 된다.

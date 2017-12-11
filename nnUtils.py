@@ -4,18 +4,18 @@ from tensorflow.python.training import moving_averages
 from tensorflow.contrib.framework import get_name_scope
 import numpy as np
 FLAGS = tf.app.flags.FLAGS
-# print(FLAGS.Drift)
-# print(FLAGS.Variation)
-# if FLAGS.Variation==True:
-#     Reset_Meanmean, Reset_Meanstd = 0., 0.1707
-#     Reset_Stdmean, Reset_Stdstd = 0.0942, 0.01884
-#     Set_Meanmean, Set_Meanstd = 0., 0.1538
-#     Set_Stdmean, Set_Stdstd = 0.1311, 0.06894
-# else:
-#     Reset_Meanmean, Reset_Meanstd = 0., 0.0000000001
-#     Reset_Stdmean, Reset_Stdstd = 0., 0.
-#     Set_Meanmean, Set_Meanstd = 0., 0.0000000001
-#     Set_Stdmean, Set_Stdstd = 0., 0.
+print(FLAGS.Drift)
+print(FLAGS.Variation)
+if FLAGS.Variation==True:
+    Reset_Meanmean, Reset_Meanstd = 0., 0.1707
+    Reset_Stdmean, Reset_Stdstd = 0.0942, 0.01884
+    Set_Meanmean, Set_Meanstd = 0., 0.1538
+    Set_Stdmean, Set_Stdstd = 0.1311, 0.06894
+else:
+    Reset_Meanmean, Reset_Meanstd = 0., 0.0000000001
+    Reset_Stdmean, Reset_Stdstd = 0., 0.
+    Set_Meanmean, Set_Meanstd = 0., 0.0000000001
+    Set_Stdmean, Set_Stdstd = 0., 0.
 
 def binarize(x):
     """
@@ -32,7 +32,7 @@ def fluc_grad(op,grad):
     shape=op.inputs[1]._shape_as_list()
     return grad,tf.zeros(shape=shape)
 
-def fluctuate(x,scale=1):
+def fluctuate(x,scale=1,Drift=False):
     filter_shape = x.get_shape().as_list()
     pre_Wbin = tf.Variable(initial_value=tf.zeros(shape=filter_shape),name='pre_Wbin',trainable=False)
     pre_Wbin_val_place=tf.placeholder(dtype=tf.float32,shape=filter_shape)
@@ -79,7 +79,7 @@ def fluctuate(x,scale=1):
             Wfluc_Set = update_element * fluc_Set * tf.cast(x <= 0, tf.float32)
             # fluctuation이 적용 된 최종 weight 값,Reset,set에 drift를 따로 적용하기 위해 pre_Wbin이 0보다 큰 부분,작은 부분, 두 부분으로 나누었다.
             step_col=tf.get_collection("Step")
-            if FLAGS.Drift and step_col!=[]:
+            if Drift and step_col!=[]:
                 batch_num = step_col[0]
                 drift_factor =tf.cast((1 + batch_num) / batch_num,dtype=tf.float32)
 
@@ -100,15 +100,16 @@ def fluctuate(x,scale=1):
 아래의 세개는 각각 Binary Conv layer,Binary Conv layer for weight, Vanilla Conv layer
 """
 def BinarizedSpatialConvolution(nOutputPlane, kW, kH, dW=1, dH=1,
-        padding='VALID', bias=True, reuse=None, name='BinarizedSpatialConvolution'):
+        padding='VALID', bias=True, reuse=None, name='BinarizedSpatialConvolution',bin=True,fluc=True,Drift=False):
     def b_conv2d(x, is_training=True):
         nInputPlane = x.get_shape().as_list()[3]
         with tf.variable_scope(values=[x], name_or_scope=None, default_name=name,reuse=reuse):
             w = tf.get_variable('weight', [kH, kW, nInputPlane, nOutputPlane],
                             initializer=tf.contrib.layers.xavier_initializer_conv2d())
-            bin_x = binarize(x)
+            bin_x = binarize(x) if bin else x
+            tf.add_to_collection(tf.GraphKeys.ACTIVATIONS, bin_x)
             bin_w = binarize(w)
-            fluc_w = fluctuate(bin_w)
+            fluc_w = fluctuate(bin_w,Drift=Drift) if fluc else bin_w
             tf.add_to_collection('Binarized_Weight', bin_w)
             tf.add_to_collection('Fluctuated_Weight', fluc_w)
             '''
@@ -123,7 +124,7 @@ def BinarizedSpatialConvolution(nOutputPlane, kW, kH, dW=1, dH=1,
     return b_conv2d
 
 def BinarizedWeightOnlySpatialConvolution(nOutputPlane, kW, kH, dW=1, dH=1,
-        padding='VALID', bias=True, reuse=None, name='BinarizedWeightOnlySpatialConvolution'):
+        padding='VALID', bias=True, reuse=None, name='BinarizedWeightOnlySpatialConvolution',fluc=True,Drift=False):
     '''
     This function is used only at the first layer of the model as we dont want to binarized the RGB images
     '''
@@ -134,7 +135,7 @@ def BinarizedWeightOnlySpatialConvolution(nOutputPlane, kW, kH, dW=1, dH=1,
                             initializer=tf.contrib.layers.xavier_initializer_conv2d())
 
             bin_w = binarize(w)
-            fluc_w = fluctuate(bin_w)
+            fluc_w = fluctuate(bin_w,Drift=Drift) if fluc else bin_w
             tf.add_to_collection('Binarized_Weight', bin_w)
             tf.add_to_collection('Fluctuated_Weight', fluc_w)
 
@@ -177,19 +178,20 @@ def Affine(nOutputPlane, bias=True, name=None, reuse=None):
         return output
     return affineLayer
 
-def BinarizedAffine(nOutputPlane, bias=True, name=None, reuse=None):
+def BinarizedAffine(nOutputPlane, bias=True, name=None, reuse=None,bin=True,fluc=True,Drift=False):
     def b_affineLayer(x, is_training=True):
         with tf.variable_scope(values=[x], name_or_scope=name, default_name='Affine', reuse=reuse):
             '''
             Note that we use binarized version of the input (bin_x) and the weights (bin_w). Since the binarized function uses STE
             we calculate the gradients using bin_x and bin_w but we update w (the full precition version).
             '''
-            bin_x = binarize(x)
+            bin_x = binarize(x) if bin else x
+            tf.add_to_collection(tf.GraphKeys.ACTIVATIONS, bin_x)
             reshaped = tf.reshape(bin_x, [x.get_shape().as_list()[0], -1])
             nInputPlane = reshaped.get_shape().as_list()[1]
             w = tf.get_variable('weight', [nInputPlane, nOutputPlane], initializer=tf.contrib.layers.xavier_initializer())
             bin_w = binarize(w)
-            fluc_w = fluctuate(bin_w)
+            fluc_w = fluctuate(bin_w,Drift=Drift) if fluc else bin_w
             tf.add_to_collection('Binarized_Weight', bin_w)
             tf.add_to_collection('Fluctuated_Weight', fluc_w)
 
@@ -200,7 +202,7 @@ def BinarizedAffine(nOutputPlane, bias=True, name=None, reuse=None):
         return output
     return b_affineLayer
 
-def BinarizedWeightOnlyAffine(nOutputPlane, bias=True, name=None, reuse=None):
+def BinarizedWeightOnlyAffine(nOutputPlane, bias=True, name=None, reuse=None, Drift=False):
     def bwo_affineLayer(x, is_training=True):
         with tf.variable_scope(values=[x], name_or_scope=name, default_name='Affine', reuse=reuse):
 
@@ -212,7 +214,7 @@ def BinarizedWeightOnlyAffine(nOutputPlane, bias=True, name=None, reuse=None):
             nInputPlane = reshaped.get_shape().as_list()[1]
             w = tf.get_variable('weight', [nInputPlane, nOutputPlane], initializer=tf.contrib.layers.xavier_initializer())
             bin_w = binarize(w)
-            fluc_w = fluctuate(bin_w)
+            fluc_w = fluctuate(bin_w,Drift=Drift)
             tf.add_to_collection('Binarized_Weight', bin_w)
             tf.add_to_collection('Fluctuated_Weight', fluc_w)
 

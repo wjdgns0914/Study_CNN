@@ -1,20 +1,78 @@
 from nnUtils import *
+# model = Sequential([
+#     BinarizedWeightOnlySpatialConvolution(128,3,3,1,1, padding='VALID', bias=False,name='L1_Convolution'),
+#
+#     # BatchNormalization(name='L2_Batch'),
+#     HardTanh(name='L3_HardTanh'),
+#     BinarizedSpatialConvolution(128,3,3, padding='SAME', bias=False,name='L4_Convolution'),
+#     SpatialMaxPooling(2,2,2,2,name='L5_MaxPooling'),
+#
+#     # BatchNormalization(name='L6_Batch'),
+#     HardTanh(name='L7_HardTanh'),
+#     BinarizedSpatialConvolution(256,3,3, padding='SAME', bias=False,name='L8_Convolution'),
+#
+#     # BatchNormalization(name='L9_Batch'),
+#     HardTanh(name='L10_HardTanh'),
+#     BinarizedSpatialConvolution(256,3,3, padding='SAME', bias=False,name='L11_Convolution'),
+#     SpatialMaxPooling(2,2,2,2,name='L12_MaxPooling'),
+#
+#     # BatchNormalization(name='L13_Batch'),
+#     HardTanh(name='L14_HardTanh'),
+#     BinarizedSpatialConvolution(512,3,3, padding='SAME', bias=False,name='L15_Convolution'),
+#
+#     # BatchNormalization(name='L16_Batch'),
+#     HardTanh(name='L17_HardTanh'),
+#     BinarizedSpatialConvolution(512,3,3, padding='SAME', bias=False,name='L18_Convolution'),
+#     SpatialMaxPooling(2,2,2,2,name='L19_MaxPooling'),
+#
+#     # BatchNormalization(name='L20_Batch'),
+#     HardTanh(name='L21_HardTanh'),
+#     BinarizedAffine(1024, bias=False,name='L22_FullyConnected'),
+#
+#     # BatchNormalization(name='L23_Batch'),
+#     HardTanh(name='L24_HardTanh'),
+#     BinarizedAffine(1024, bias=False,name='L25_FullyConnected'),
+#
+#     # BatchNormalization(name='L26_Batch'),
+#     HardTanh(name='L27_HardTanh'),
+#     BinarizedAffine(10,bias=False,name='L28_FullyConnected'),
+#     # BatchNormalization(name='L29_Batch')
+# ])
 
 model = Sequential([
-    BinarizedWeightOnlySpatialConvolution(32,3,3, padding='SAME', bias=False,name='L1_Convolution'),
-    ReLU(name='L2_ReLU'),
-    SpatialMaxPooling(2,2,2,2,name='L3_MaxPooling',padding='SAME'),
+    BinarizedWeightOnlySpatialConvolution(32,3,3, padding='SAME', bias=False,name='L1_Convolution',Drift=True),
 
-    BinarizedSpatialConvolution(64, 3, 3, padding='SAME', bias=False, name='L4_Convolution'),
-    ReLU(name='L5_ReLU'),
-    SpatialMaxPooling(2,2,2,2,name='L6_MaxPooling',padding='SAME'),
+    BatchNormalization(name='L2_Batch'),
+    # ReLU(name='L3_ReLU'),
+    HardTanh(name='L3_HardTanh'),
+    BinarizedSpatialConvolution(64, 3, 3, padding='SAME', bias=False, name='L4_Convolution',Drift=True),
+    SpatialMaxPooling(2,2,2,2,name='L5_MaxPooling',padding='SAME'),
 
-    BinarizedSpatialConvolution(128, 3, 3, padding='SAME', bias=False, name='L7_Convolution'),
-    ReLU(name='L8_ReLU'),
+    # ReLU(name='L5_ReLU'),
+
+    BatchNormalization(name='L6_Batch'),
+    HardTanh(name='L7_HardTanh'),
+    # ReLU(name='L7_ReLU'),
+    BinarizedSpatialConvolution(128, 3, 3, padding='SAME', bias=False, name='L8_Convolution',Drift=True),
     SpatialMaxPooling(2,2,2,2,name='L9_MaxPooling',padding='SAME'),
+    # ReLU(name='L8_ReLU'),
 
-    BinarizedAffine(625, bias=False,name='L10_FullyConnected'),
-    ReLU(name='L11_ReLU'),
+    BatchNormalization(name='L10_Batch'),
+    HardTanh(name='L11_HardTanh'),
+    # ReLU(name='L11_ReLU'),
+    BinarizedSpatialConvolution(256, 3, 3, padding='SAME', bias=False, name='L12_Convolution',Drift=True),
+    SpatialMaxPooling(2,2,2,2,name='L13_MaxPooling',padding='SAME'),
+    # ReLU(name='L11_ReLU'),
 
-    BinarizedAffine(10,bias=False,name='L12_FullyConnected'),
+
+    BatchNormalization(name='L14_Batch'),
+    HardTanh(name='L15_HardTanh'),
+    # ReLU(name='L15_ReLU'),
+    BinarizedAffine(625, bias=False,name='L16_FullyConnected',Drift=True),
+    # ReLU(name='L14_ReLU'),
+
+    BatchNormalization(name='L17_Batch'),
+    HardTanh(name='L18_HardTanh'),
+    # ReLU(name='L18_ReLU'),
+    BinarizedAffine(10,bias=False,name='L19_FullyConnected',Drift=True),
 ])
