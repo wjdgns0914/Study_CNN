@@ -4,7 +4,7 @@ from tensorflow.python.training import moving_averages
 from tensorflow.contrib.framework import get_name_scope
 import numpy as np
 FLAGS = tf.app.flags.FLAGS
-print(FLAGS.Drift)
+# print(FLAGS.Drift)
 print(FLAGS.Variation)
 if FLAGS.Variation==True:
     Reset_Meanmean, Reset_Meanstd = 0., 0.1707
@@ -66,33 +66,35 @@ def fluctuate(x,scale=1,Drift=False):
         fluc_Reset = tf.reshape(tf.distributions.Normal(loc=Reset_Meanvalue, scale=Reset_Stdvalue).sample(1),filter_shape)
         fluc_Set = tf.reshape(tf.distributions.Normal(loc=Set_Meanvalue, scale=Set_Stdvalue).sample(1), filter_shape)
         g = tf.get_default_graph()
-        with g.gradient_override_map({"Mul": "fluc_grad","Cast": "Identity",
-                                      "Equal": "fluc_grad","Greater":"fluc_grad",
-                                      "LessEqual":"fluc_grad","NotEqual":"fluc_grad",
-                                      "Add": "fluc_grad"}):
             # assign 1 to elements which have same state with pre-state
-            keep_element = tf.cast(tf.equal(x,pre_Wbin), tf.float32)
-            # assign 1 to elements which have different state with pre-state
-            update_element = tf.cast(tf.not_equal(x,pre_Wbin), tf.float32)
-            # 이 부분에서 쓰지도않는 랜덤 값이 많이 발생하는데 일단 두고 나중에 고치든가 하자
-            Wfluc_Reset = update_element * fluc_Reset * tf.cast(x > 0, tf.float32)
-            Wfluc_Set = update_element * fluc_Set * tf.cast(x <= 0, tf.float32)
-            # fluctuation이 적용 된 최종 weight 값,Reset,set에 drift를 따로 적용하기 위해 pre_Wbin이 0보다 큰 부분,작은 부분, 두 부분으로 나누었다.
-            step_col=tf.get_collection("Step")
-            if Drift and step_col!=[]:
-                batch_num = step_col[0]
-                drift_factor =tf.cast((1 + batch_num) / batch_num,dtype=tf.float32)
-
-                drift_scale = tf.cond(tf.equal(batch_num, 0), lambda: tf.constant(0.),     #tf.cast(tf.equal(batch_num, 0), dtype=tf.float32)
-                                      lambda: tf.cast(0.09 * tf.log(drift_factor) / tf.log(tf.constant(10, dtype=tf.float32)), dtype=tf.float32))
-                tf.add_to_collection("testt", drift_scale)
-            else:
-                drift_scale=tf.constant(0.)
+        keep_element = tf.cast(tf.equal(x,pre_Wbin), tf.float32)
+        # assign 1 to elements which have different state with pre-state
+        update_element = tf.cast(tf.not_equal(x,pre_Wbin), tf.float32)
+        # 이 부분에서 쓰지도않는 랜덤 값이 많이 발생하는데 일단 두고 나중에 고치든가 하자
+        Wfluc_Reset = update_element * fluc_Reset * tf.cast(x > 0, tf.float32)
+        Wfluc_Set = update_element * fluc_Set * tf.cast(x <= 0, tf.float32)
+        # fluctuation이 적용 된 최종 weight 값,Reset,set에 drift를 따로 적용하기 위해 pre_Wbin이 0보다 큰 부분,작은 부분, 두 부분으로 나누었다.
+        step_col = tf.get_collection("Step")
+        if Drift and step_col!=[]:
+            step = tf.Variable(tf.zeros(shape=filter_shape, dtype=tf.float32),trainable=False)
+            step = tf.assign(step, step * keep_element + keep_element)
+            drift_factor = (step+1.)/(tf.cast(tf.equal(step,0.),dtype=tf.float32)+step)
+            # drift_scale=tf.cast(0.09 * tf.log(drift_factor) / tf.log(tf.constant(10, dtype=tf.float32)),dtype=tf.float32)
+            # drift_scale = 0.09 * tf.log(drift_factor) / tf.log(10.)
+            # drift_scale = tf.log(drift_factor)/ tf.log(10.)
+            drift_scale =  (tf.log(drift_factor) / tf.log(10.))*0.09
+            tf.add_to_collection("testt", drift_scale)
+        else:
+            # drift_scale=tf.constant(tf.zeros(shape=filter_shape))
+            drift_scale = tf.constant(0.)
+        with g.gradient_override_map({"Mul": "fluc_grad", "Cast": "Identity",
+                                      "Equal": "fluc_grad", "Greater": "fluc_grad",
+                                      "LessEqual": "fluc_grad", "NotEqual": "fluc_grad",
+                                      "Add": "fluc_grad"}):
             with tf.control_dependencies([drift_scale]):
                 Wfluc = tf.multiply(x, update_element) +tf.cast(tf.greater(pre_Wbin,0), tf.float32) * keep_element * (pre_Wfluc + drift_scale)+ \
                         tf.cast(tf.less_equal(pre_Wbin,0), tf.float32) * keep_element * pre_Wfluc * 1. \
                         + Wfluc_Reset + Wfluc_Set
-
         return Wfluc
 
 """

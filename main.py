@@ -29,13 +29,15 @@ tf.app.flags.DEFINE_string('save', timestr+"HardTanh_Var_Drift",
                            """Name of saved dir.""")
 tf.app.flags.DEFINE_string('load', None,
                            """Name of loaded dir.""")
-tf.app.flags.DEFINE_string('dataset', 'cifar10',
+tf.app.flags.DEFINE_string('dataset', 'MNIST',
                            """Name of dataset used.""")
 tf.app.flags.DEFINE_string('summary', True,
                            """Record summary.""")
-tf.app.flags.DEFINE_string('Drift', False,
+tf.app.flags.DEFINE_string('Drift1', True,
                            """Drift or Not.""")
-tf.app.flags.DEFINE_string('Variation', False,
+tf.app.flags.DEFINE_string('Drift2', True,
+                           """Drift or Not.""")
+tf.app.flags.DEFINE_string('Variation', True,
                            """Variation or Not.""")
 tf.app.flags.DEFINE_string('log', 'ERROR',
                            'The threshold for what messages will be logged '
@@ -145,6 +147,7 @@ def train(model, data,
         loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=yt_one, logits=y))
         accuracy=tf.reduce_mean(tf.cast(tf.equal(yt, tf.cast(tf.argmax(y, dimension=1),dtype=tf.int32)),dtype=tf.float32))
         # accuracy = tf.reduce_mean(tf.cast(tf.nn.in_top_k(y, yt, 1), tf.float32))
+    opt= tf.train.GradientDescentOptimizer(learning_rate).minimize(loss)
     opt = tf.contrib.layers.optimize_loss(loss, global_step, learning_rate, 'Adam',
                                           gradient_noise_scale=None, gradient_multipliers=None,
                                           clip_gradients=None, #moving_average_decay=0.9,
@@ -213,8 +216,12 @@ def train(model, data,
 
     print('We start training..num of trainable paramaters: %d' %count_params(tf.trainable_variables()))
     best_acc=0
+    file = open(FLAGS.checkpoint_dir + "/model.py", "a")
+    print("Drift1:",FLAGS.Drift1,"\nDrift2",FLAGS.Drift2,"\nVariation",FLAGS.Variation,file=file)
+    print("\nLR:", FLAGS.learning_rate, "\nbatch_size", FLAGS.batch_size, "\nDataset", FLAGS.dataset, file=file)
+
     for i in range(num_epochs):
-        file = open(FLAGS.checkpoint_dir + "/model.py", "a")
+        # file = open(FLAGS.checkpoint_dir + "/model.py", "a")
         print('"""', file=file)
         print('Started epoch %d' % (i+1))
         print('Started epoch %d' % (i + 1),file=file)
@@ -282,10 +289,10 @@ def train(model, data,
         summary_writer.add_summary(summary_out, step)
         summary_writer.flush()
         print('"""', file=file)
-        file.close()
+
 
     # When done, ask the threads to stop.
-
+    file.close()
     coord.request_stop()
     coord.join(threads)
     coord.clear_stop()
