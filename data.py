@@ -113,36 +113,14 @@ def __read_cifar(filenames, shuffle=True, cifar100=False):
 
 def __read_MNIST(mnist,training=True):
     """Reads and parses examples from MNIST data files."""
-    # filename_queue_image = tf.train.string_input_producer(filenames[0], shuffle=shuffle, num_epochs=None)
-    # filename_queue_label = tf.train.string_input_producer(filenames[1], shuffle=shuffle, num_epochs=None)
-    # label_bytes = 1
-    # height = 28
-    # width = 28
-    # depth = 1
-    # image_bytes = height * width * depth
-    #
-    # reader_image = tf.FixedLengthRecordReader(record_bytes=image_bytes, header_bytes=16)
-    # reader_label = tf.FixedLengthRecordReader(record_bytes=label_bytes, header_bytes=8)
-    #
-    # key_image, value_image = reader_image.read(filename_queue_image)
-    # key_label, value_label = reader_label.read(filename_queue_label)
-    #
-    # record_bytes_image = tf.decode_raw(value_image, tf.uint8)
-    # record_bytes_label = tf.decode_raw(value_label, tf.uint8)
-    #
-    # depth_major = tf.reshape(tf.slice(record_bytes_image, [0], [image_bytes]),  # def slice(input_, begin, size, name=None):
-    #                          [depth, height, width])
-    # label = tf.cast(tf.slice(record_bytes_label, [0], [label_bytes]), tf.int32)
-    # image = tf.transpose(depth_major, [1, 2, 0])
     mnist = input_data.read_data_sets("Datasets/MNIST", one_hot=False)
     if training:
-        a=tf.cast(tf.convert_to_tensor(mnist.train.images.reshape([55000,28,28,1])),tf.float32)
-        b=tf.cast(tf.convert_to_tensor(mnist.train.labels),dtype=tf.int32)
+        images=tf.cast(tf.convert_to_tensor(mnist.train.images.reshape([55000,28,28,1])),tf.float32)
+        labels=tf.cast(tf.convert_to_tensor(mnist.train.labels),dtype=tf.int32)
     else:
-        a = tf.cast(tf.convert_to_tensor(mnist.test.images.reshape([10000,28,28,1])),dtype=tf.float32)
-        b = tf.cast(tf.convert_to_tensor(mnist.test.labels),dtype=tf.int32)
-    # return tf.cast(image, tf.float32), label
-    return a,b
+        images = tf.cast(tf.convert_to_tensor(mnist.test.images.reshape([10000,28,28,1])),dtype=tf.float32)
+        labels = tf.cast(tf.convert_to_tensor(mnist.test.labels),dtype=tf.int32)
+    return images,labels
 """
 설명5:
 클래스 안에 매서드가 한개있다! 클래스응용에 참 좋은 예제인 것 같다.
@@ -272,21 +250,6 @@ def get_data_provider(name, mnist=None,training=True):
             return DataProvider([os.path.join(data_dir, 'test.bin')],10000, False, __read_cifar)
 
     elif name == 'MNIST':
-        """
-        data_dir= os.path.join(DATA_DIR,'MNIST')
-        # url = [URLs['MNIST_train_image'],URLs['MNIST_train_lable'],URLs['MNIST_test_image'],URLs['MNIST_test_label']]
-        # def post_f(f):
-        #     return gzip.GzipFile(f)
-        # for i in range(4):
-        #     __maybe_download(url[i], data_dir, post_f)
-
-        # if training:
-        #     return DataProvider(__read_MNIST([[os.path.join(data_dir, 'train-images.idx3-ubyte')],[os.path.join(data_dir, 'train-labels.idx1-ubyte')]]),
-        #                         [55000, 28,28,1], True)
-        # else:
-        #     return DataProvider(__read_MNIST([[os.path.join(data_dir, 't10k-images.idx3-ubyte')],[os.path.join(data_dir, 't10k-labels.idx1-ubyte')]],training=False),
-        #                         [10000, 28,28, 1], False)
-        """
         if training:
             return DataProvider(__read_MNIST(mnist=mnist),size=[55000, 28,28, 1], training=True,MNIST=True)
         else:

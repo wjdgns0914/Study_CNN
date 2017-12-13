@@ -14,22 +14,22 @@ import matplotlib.pyplot as plt
 timestr = '-'.join(str(x) for x in list(tuple(datetime.now().timetuple())[:6]))
 MOVING_AVERAGE_DECAY = 0.997
 FLAGS = tf.app.flags.FLAGS
-tf.set_random_seed(777)  # reproducibility
+tf.set_random_seed(333)  # reproducibility
 
 # Basic model parameters.
 tf.app.flags.DEFINE_integer('batch_size', 64,
                             """Number of images to process in a batch.""")
-tf.app.flags.DEFINE_integer('num_epochs', 80,
+tf.app.flags.DEFINE_integer('num_epochs', 120,
                             """Number of epochs to train. -1 for unlimited""")
 tf.app.flags.DEFINE_float('learning_rate', 0.001,
                             """Initial learning rate used.""")
-tf.app.flags.DEFINE_string('model', 'BNN_MNIST0_nodrop',  #BNN_MNIST0_nodrop
+tf.app.flags.DEFINE_string('model','BNN_MNIST0_nodrop',
                            """Name of loaded model.""")
-tf.app.flags.DEFINE_string('save', timestr+"HardTanh_Var_Drift",
+tf.app.flags.DEFINE_string('save', timestr,
                            """Name of saved dir.""")
 tf.app.flags.DEFINE_string('load', None,
                            """Name of loaded dir.""")
-tf.app.flags.DEFINE_string('dataset', 'MNIST',
+tf.app.flags.DEFINE_string('dataset', 'cifar10',
                            """Name of dataset used.""")
 tf.app.flags.DEFINE_string('summary', True,
                            """Record summary.""")
@@ -56,60 +56,99 @@ def count_params(var_list):
     return num
 
 ##Writer에 작성 할 내용을 정의하는 함수
-def add_summaries(scalar_list=[], activation_list=[], var_list=[], grad_list=[],Wbin_list=[],Wfluc_list=[]):
+def add_summaries(scalar_list=[], activation_list=[], grad_list=[], var_list=[],Wbin_list=[],Wfluc_list=[],Drift_step=[],Drift_value=[]):
 
     for var in scalar_list:
-        if var is not None:
+        if var != None:
             tf.summary.scalar(var.op.name, var)
 
-    for grad, var in grad_list:
-        if grad is not None:
-            tf.summary.histogram(var.op.name + '/gradients', grad)
-
-    for var in var_list:
-        if var is not None:
-            ful = var.op.name
-            tf.summary.histogram(ful.split('/')[0]+'/0/'+ful.split('/')[1], var)
-            sz = var.get_shape().as_list()
-            if len(sz) == 4 and sz[2] == 3:
-                kernels = tf.transpose(var, [3, 0, 1, 2])
-                tf.summary.image(var.op.name + '/kernels',group_batch_images(kernels), max_outputs=1)
-    for var in var_list:
-        if var is not None:
-            # index=np.array([1]*(len(var.get_shape().as_list())-2)+[0]+[1])
-
-            ful = var.op.name  # full name
-            for i in range(2):
-                index=[np.random.randint(j) for j in var.get_shape().as_list()]
-                tf.summary.scalar(ful.split('/')[0]+'/W'+str(index)+'/0/'+ful.split('/')[1], var[index])
-
     for activation in activation_list:
-        if activation is not None:
+        if activation != None:
             ful=activation.op.name
             tf.summary.histogram(ful.split('/')[0]+'/2/'+'activations', activation)
 
-    for Wbin in Wbin_list:
-        if Wbin is not None:
-            ful=Wbin.op.name  #full name
-            tf.summary.histogram(ful.split('/')[0]+'/1/'+ful.split('/')[1], Wbin)
-    for Wbin in Wbin_list:
-        if Wbin is not None:
-            # index = np.array([1] * (len(Wbin.get_shape().as_list()) - 2) + [0] + [1])
-            ful = Wbin.op.name  # full name
-            for i in range(2):
-                index = [np.random.randint(j) for j in Wbin.get_shape().as_list()]
-                tf.summary.scalar(ful.split('/')[0]+'/W'+str(index)+'/1/'+ful.split('/')[1], Wbin[index])
+    for grad, var in grad_list:
+        if grad != None:
+            tf.summary.histogram(var.op.name + '/gradients', grad)
+    zip_list=[]   #여기서 처리하기에는 예외가 많아서 그냥 nnUtils에서 drift꺼지더라도 []을 추가해주기로 함
+    length=len(var_list) #예를 들어서 Drift1=False, Drift2=True면 Drift_step이 Wbin_list보다 짧게 나옴, 아래의 코드로 처리불가
+    zip_list.append([[]] * length) if var_list==[] else zip_list.append(var_list) #이 코드는 그냥 아예 리스트가 안들어왔을 때를 위해
+    zip_list.append([[]] * length) if Wbin_list==[] else zip_list.append(Wbin_list)
+    zip_list.append([[]] * length) if Wfluc_list==[] else zip_list.append(Wfluc_list)
+    zip_list.append([[]] * length) if Drift_step==[] else zip_list.append(Drift_step)
+    zip_list.append([[]] * length) if Drift_value==[] else zip_list.append(Drift_value)   #여기까지
+    for W,Wbin,Wfluc,Step,Value in zip(*zip_list):
+        #이름 뽑아내기, 물론 여기서 새로 Fluctuated, Binarized 식으로 쓰는게 더 직관적이지만 기존의 텐서에서 이름 뽑아내는 명령어와
+        #split 함수 써보기 위해서 그냥 이렇게 한다.
+        name_layer= (W.op.name).split('/')[0]  # W가 Wbin,Wfluc으로 바뀌어도 어차피 / 기준 첫번째는 레이어 이름이라 결과는 똑같다.
+        name_W    = "Original"
+        name_Wbin = (Wbin.op.name).split('/')[1]
+        name_Wfluc= (Wfluc.op.name).split('/')[1]
+        num_weights = 5
+        min_drift_step = 10
+        # Histogram
+        tf.summary.histogram(name_layer+ '/0/' + name_W, W) \
+            if W != [] else print("No W_list")
+        tf.summary.histogram(name_layer+ '/1/' + name_Wbin, Wbin) \
+            if Wbin != [] else print("No Wbin_list")
+        tf.summary.histogram(name_layer+ '/2/' + name_Wfluc, Wfluc) \
+            if Wfluc != [] else print("No Wfluc_list")
 
+        #Kernel - mainly for CNN
+        sz = W.get_shape().as_list()
+        if len(sz) == 4 and sz[2] == 3:
+            kernels = tf.transpose(W, [3, 0, 1, 2])
+            tf.summary.image(W.op.name + '/kernels', group_batch_images(kernels), max_outputs=1)
+        if Value.get_shape().as_list()[0] != 0:
+            assert_op = tf.Assert(tf.reduce_min(Value) >= 0, [Value])
+            with tf.control_dependencies([assert_op]):
+                Value=tf.identity(Value)
+        # Some weights in the layer
+        index_history=[]
+        for i in range(num_weights):
+            index = [np.random.randint(j) for j in W.get_shape().as_list()]
+            index_str = '/' + str(index).replace(', ','_')[1:-1]
+            index_history.append(index)
+            if W != []:
+                tf.summary.scalar(name_layer+ index_str + '/0/' + name_W, W[index])
+            if Wbin != []:
+                tf.summary.scalar(name_layer+ index_str + '/1/' + name_Wbin, Wbin[index])
+            if Wfluc != []:
+                tf.summary.scalar(name_layer+ index_str + '/2/' + name_Wfluc, Wfluc[index])
+            if Value.get_shape().as_list()[0] != 0:
+                tf.summary.scalar(name_layer+ index_str + '/3/' + 'dvalue', Value[index])
+        file = open(FLAGS.checkpoint_dir + "/model.py", "a")
+        print("'''",name_layer,' : ',index_history,"'''",file=file)
+        file.close()
+        # Calculate the ratio (Drifted weights num)/(all weights num)
+        if Step.get_shape().as_list()[0] != 0:
+            num=Step.get_shape().num_elements()
+            weights_keeping1  = tf.cast(Step>20,dtype=tf.float32)
+            weights_keeping2 = tf.cast(Step > 120, dtype=tf.float32)
+            weights_keeping3 = tf.cast(Step > 840, dtype=tf.float32)
 
-    for Wfluc in Wfluc_list:
-        if Wfluc is not None:
-            # index = np.array([1] * (len(Wfluc.get_shape().as_list()) - 2) + [0] + [1])
-            ful = Wfluc.op.name  # full name
-            for i in range(2):
-                index = [np.random.randint(j) for j in Wfluc.get_shape().as_list()]
-                tf.summary.scalar(ful.split('/')[0] + '/W' + str(index) + '/2/' + ful.split('/')[1],
-                                  Wfluc[index])
-            #tf.summary.scalar(activation.op.name + '/sparsity', tf.nn.zero_fraction(activation))
+            weights_keeping_num1 =tf.reduce_sum(weights_keeping1)
+            weights_keeping_num2 = tf.reduce_sum(weights_keeping2)
+            weights_keeping_num3 = tf.reduce_sum(weights_keeping3)
+
+            weights_keeping_num_reset1 = tf.reduce_sum(weights_keeping1 * tf.cast(Wbin >= 0, dtype=tf.float32))
+            weights_keeping_num_reset2 = tf.reduce_sum(weights_keeping2 * tf.cast(Wbin >= 0, dtype=tf.float32))
+            weights_keeping_num_reset3 = tf.reduce_sum(weights_keeping3 * tf.cast(Wbin >= 0, dtype=tf.float32))
+
+            ratio11 = weights_keeping_num1 / num
+            ratio12 = weights_keeping_num2 / num
+            ratio13 = weights_keeping_num3 / num
+            ratio21 = weights_keeping_num_reset1 / tf.reduce_sum(tf.cast(Wbin>=0,dtype=tf.float32))
+            ratio22 = weights_keeping_num_reset2 / tf.reduce_sum(tf.cast(Wbin>=0,dtype=tf.float32))
+            ratio23 = weights_keeping_num_reset3 / tf.reduce_sum(tf.cast(Wbin>=0,dtype=tf.float32))
+
+            tf.summary.scalar(name_layer + "/Ratio_Keeping/1_125", ratio11)
+            tf.summary.scalar(name_layer + "/Ratio_Keeping/1_205", ratio12)
+            tf.summary.scalar(name_layer + "/Ratio_Keeping/1_300", ratio13)
+            tf.summary.scalar(name_layer + "/Ratio_Drifted/1_125", ratio21)
+            tf.summary.scalar(name_layer + "/Ratio_Drifted/1_205", ratio22)
+            tf.summary.scalar(name_layer + "/Ratio_Drifted/1_300", ratio23)
+    #tf.summary.scalar(activation.op.name + '/sparsity', tf.nn.zero_fraction(activation))
 
 ##LR을 decay시켜주는 함수
 def _learning_rate_decay_fn(learning_rate, global_step):
@@ -129,17 +168,13 @@ def train(model, data,
           log_dir='./log',
           checkpoint_dir='./checkpoint',
           num_epochs=-1):
-    # tf Graph input
 
     with tf.name_scope('data'):
         x, yt = data.next_batch(batch_size)
     global_step =  tf.get_variable('global_step', shape=[],dtype=tf.int64,
                          initializer=tf.constant_initializer(0),
                          trainable=False)
-    tf.add_to_collection("Step",global_step)
-
-    # use_for_coming_batch = [{}, {}]  # 순서대로 Wbin,Wfluc
-    # tf.add_to_collection('use_for_coming_batch', use_for_coming_batch)
+    tf.add_to_collection("Step",global_step)  #Evaluate에서 Drift효과 끄기 위해 구분점역할을 한다.
     y = model(x, is_training=True)
     # Define loss and optimizer
     with tf.name_scope('objective'):
@@ -147,7 +182,6 @@ def train(model, data,
         loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=yt_one, logits=y))
         accuracy=tf.reduce_mean(tf.cast(tf.equal(yt, tf.cast(tf.argmax(y, dimension=1),dtype=tf.int32)),dtype=tf.float32))
         # accuracy = tf.reduce_mean(tf.cast(tf.nn.in_top_k(y, yt, 1), tf.float32))
-    opt= tf.train.GradientDescentOptimizer(learning_rate).minimize(loss)
     opt = tf.contrib.layers.optimize_loss(loss, global_step, learning_rate, 'Adam',
                                           gradient_noise_scale=None, gradient_multipliers=None,
                                           clip_gradients=None, #moving_average_decay=0.9,
@@ -173,10 +207,11 @@ def train(model, data,
     with tf.control_dependencies([opt]):
         train_op = tf.group(*updates_collection)
     print("Make summary for writer...")
-    list_W = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='L')
+    list_W = tf.get_collection('Original_Weight', scope='L')
     list_Wbin = tf.get_collection('Binarized_Weight', scope='L')
     list_Wfluc = tf.get_collection('Fluctuated_Weight', scope='L')
-
+    list_Drift_step = tf.get_collection('Drift_step',scope='L')
+    list_Drift_value= tf.get_collection('Drift_value',scope='L')
     list_pre_Wbin = tf.get_collection('pre_Wbin', scope='L')
     list_pre_Wfluc = tf.get_collection('pre_Wfluc', scope='L')
 
@@ -184,9 +219,10 @@ def train(model, data,
     list_pre_Wfluc_op = tf.get_collection('pre_Wfluc_update_op', scope='L')
 
     if FLAGS.summary:
+
         add_summaries(scalar_list=[accuracy, accuracy_avg, loss, loss_avg],
             activation_list=tf.get_collection(tf.GraphKeys.ACTIVATIONS),
-            var_list=list_W,Wbin_list=list_Wbin,Wfluc_list=list_Wfluc)
+            var_list=list_W,Wbin_list=list_Wbin,Wfluc_list=list_Wfluc,Drift_step=list_Drift_step,Drift_value=list_Drift_value)
             # grad_list=grads)
 
     summary_op = tf.summary.merge_all()
@@ -207,41 +243,27 @@ def train(model, data,
     num_batches = int(data.size[0] / batch_size)
     print("Check the collections...")
     print("list_W:\n",list_W,'\nNum:',len(list_W))
-    print("list_Wbin:\n:",list_Wbin,'\nNum:',len(list_Wbin))
-    print("list_Wfluc:\n:",list_Wfluc,'\nNum:',len(list_Wfluc))
+    # print("list_Wbin:\n:",list_Wbin,'\nNum:',len(list_Wbin))
+    # print("list_Wfluc:\n:",list_Wfluc,'\nNum:',len(list_Wfluc))
     # print("list_pre_Wbin:\n:", list_pre_Wbin, '\nNum:', len(list_pre_Wbin))
     # print("list_pre_Wfluc:\n:", list_pre_Wfluc, '\nNum:', len(list_pre_Wfluc))
-    print("list_pre_Wbin_op:\n:", list_pre_Wbin_op, '\nNum:', len(list_pre_Wbin_op))
-    print("list_pre_Wfluc_op:\n:", list_pre_Wfluc_op, '\nNum:', len(list_pre_Wfluc_op))
-
+    # print("list_pre_Wbin_op:\n:", list_pre_Wbin_op, '\nNum:', len(list_pre_Wbin_op))
+    # print("list_pre_Wfluc_op:\n:", list_pre_Wfluc_op, '\nNum:', len(list_pre_Wfluc_op))
     print('We start training..num of trainable paramaters: %d' %count_params(tf.trainable_variables()))
     best_acc=0
     file = open(FLAGS.checkpoint_dir + "/model.py", "a")
-    print("Drift1:",FLAGS.Drift1,"\nDrift2",FLAGS.Drift2,"\nVariation",FLAGS.Variation,file=file)
-    print("\nLR:", FLAGS.learning_rate, "\nbatch_size", FLAGS.batch_size, "\nDataset", FLAGS.dataset, file=file)
-
+    print("'''\nDrift1 : ",FLAGS.Drift1,"\nDrift2 : ",FLAGS.Drift2,"\nVariation : ",FLAGS.Variation,file=file)
+    print("\nLR : ", FLAGS.learning_rate, "\nbatch_size : ", FLAGS.batch_size, "\nDataset : ", FLAGS.dataset,"'''", file=file)
     for i in range(num_epochs):
-        # file = open(FLAGS.checkpoint_dir + "/model.py", "a")
         print('"""', file=file)
         print('Started epoch %d' % (i+1))
         print('Started epoch %d' % (i + 1),file=file)
         count_num=np.array([0,0,0,0,0,0,0,0,0,0])
         for j in tqdm(range(num_batches)):
-            #tf.add_to_collection('use_for_this_batch', save_for_next_batch)    #이 코드가 메모리 에러를 일으키는 주범이었다. dict은 알아서 메모리 관리 잘하고 있었음.
-            # print("drift_factor=",sess.run(tf.get_collection("testt")))
             list_run = sess.run(list_Wbin+list_Wfluc+[train_op, loss]+[y,yt])  #train_op를 통해 업데이트를 하기 전에 list_Wbin,Wfluc에 있는 var들의 값을 save for next batch
-            # if j>38 and j<40:
-            #     print("prediction:",list_run[-2],"  correct:",list_run[-1])
-            # if i==2:
-            #     aa = list_run[-2][0]
-            #     plt.imshow(list_run[-2][0].reshape([28, 28]))
-            #     plt.show()
-            #     print(list_run[-1][0])
-            #     plt.imshow(list_run[-2][3].reshape([28, 28]))
-            #     plt.show()
-            #     print(list_run[-1][3])
             unique_elements,elements_counts=np.unique(list_run[-1],return_counts=True)
             num_set=dict(zip(unique_elements,elements_counts))
+            #ii라는 숫자가 dictionary에 들어있다면 카운트에 더해준다.
             for ii in range(10):
                 if num_set.__contains__(ii):
                     count_num[ii]=count_num[ii]+num_set[ii]
@@ -270,11 +292,8 @@ def train(model, data,
         print(["%d : " % i + str(count_num[i]) for i in range(10)], " Totral num: ", count_num.sum(),file=file)
         print('Training - Accuracy: %.3f' % acc_value,'  Loss:%.3f'% loss_value)
         print('Training - Accuracy: %.3f' % acc_value, '  Loss:%.3f' % loss_value,file=file)
-
         saver.save(sess, save_path=checkpoint_dir + '/model.ckpt', global_step=global_step)
-        test_acc, test_loss = evaluate(model, FLAGS.dataset,
-                                       checkpoint_dir=checkpoint_dir)
-        # log_dir=log_dir)
+        test_acc, test_loss = evaluate(model, FLAGS.dataset,checkpoint_dir=checkpoint_dir)# log_dir=log_dir)
         print('Test     - Accuracy: %.3f' % test_acc, '  Loss:%.3f' % test_loss)
         print('Test     - Accuracy: %.3f' % test_acc, '  Loss:%.3f' % test_loss,file=file)
         if best_acc<test_acc:
@@ -328,11 +347,6 @@ def main(argv=None):  # pylint: disable=unused-argument
         assert gfile.Exists(model_file), 'no model file named: ' + model_file
         gfile.Copy(model_file, FLAGS.checkpoint_dir + '/model.py')
     m = importlib.import_module('models.' + FLAGS.model)
-    # if FLAGS.dataset=="MNIST":
-    #     from tensorflow.examples.tutorials.mnist import input_data
-    #     mnist = input_data.read_data_sets("Datasets/MNIST", one_hot=False)
-    # else:
-    #     mnist = None
     data = get_data_provider(FLAGS.dataset, training=True)
 
     train(m.model, data,
@@ -373,77 +387,3 @@ if __name__ == '__main__':
     # print(callable(main))
     # print(locals())
     tf.app.run()
-
-
-"""
-Started epoch 1
-100%|██████████| 859/859 [00:26<00:00, 32.33it/s]
-['0 : 5465', '1 : 6181', '2 : 5435', '3 : 5592', '4 : 5363', '5 : 4967', '6 : 5426', '7 : 5742', '8 : 5357', '9 : 5448']  Totral num:  54976
-Training - Accuracy: 0.979   Loss:0.061
-Test     - Accuracy: 0.982   Loss:0.056
-
-Started epoch 2
-100%|██████████| 859/859 [00:24<00:00, 34.39it/s]
-['0 : 5360', '1 : 6209', '2 : 5491', '3 : 5671', '4 : 5333', '5 : 4969', '6 : 5471', '7 : 5688', '8 : 5321', '9 : 5463']  Totral num:  54976
-Training - Accuracy: 0.984   Loss:0.049
-Test     - Accuracy: 0.986   Loss:0.048
-Best     - Accuracy: 0.986
-
-Started epoch 3
-100%|██████████| 859/859 [00:24<00:00, 34.49it/s]
-['0 : 5431', '1 : 6201', '2 : 5457', '3 : 5579', '4 : 5325', '5 : 4953', '6 : 5384', '7 : 5761', '8 : 5402', '9 : 5483']  Totral num:  54976
-Training - Accuracy: 0.988   Loss:0.038
-Test     - Accuracy: 0.989   Loss:0.038
-Best     - Accuracy: 0.989
-
-Started epoch 4
-100%|██████████| 859/859 [00:24<00:00, 34.69it/s]
-['0 : 5435', '1 : 6217', '2 : 5426', '3 : 5638', '4 : 5361', '5 : 4973', '6 : 5461', '7 : 5728', '8 : 5269', '9 : 5468']  Totral num:  54976
-Training - Accuracy: 0.990   Loss:0.031
-Test     - Accuracy: 0.982   Loss:0.060
-Best     - Accuracy: 0.989
-
-Started epoch 5
-100%|██████████| 859/859 [00:24<00:00, 35.39it/s]
-['0 : 5428', '1 : 6196', '2 : 5431', '3 : 5618', '4 : 5380', '5 : 4950', '6 : 5415', '7 : 5730', '8 : 5399', '9 : 5429']  Totral num:  54976
-Training - Accuracy: 0.990   Loss:0.031
-Test     - Accuracy: 0.988   Loss:0.047
-Best     - Accuracy: 0.989
-
-Started epoch 6
-100%|██████████| 859/859 [00:24<00:00, 35.12it/s]
-['0 : 5458', '1 : 6147', '2 : 5466', '3 : 5636', '4 : 5343', '5 : 4974', '6 : 5396', '7 : 5763', '8 : 5360', '9 : 5433']  Totral num:  54976
-Training - Accuracy: 0.992   Loss:0.026
-Test     - Accuracy: 0.989   Loss:0.038
-Best     - Accuracy: 0.989
-
-Started epoch 7
-100%|██████████| 859/859 [00:24<00:00, 34.86it/s]
-['0 : 5412', '1 : 6097', '2 : 5494', '3 : 5635', '4 : 5375', '5 : 4956', '6 : 5417', '7 : 5758', '8 : 5360', '9 : 5472']  Totral num:  54976
-Training - Accuracy: 0.993   Loss:0.024
-Test     - Accuracy: 0.988   Loss:0.044
-Best     - Accuracy: 0.989
-
-Started epoch 8
-100%|██████████| 859/859 [00:24<00:00, 35.05it/s]
-['0 : 5429', '1 : 6232', '2 : 5414', '3 : 5593', '4 : 5366', '5 : 4958', '6 : 5422', '7 : 5732', '8 : 5373', '9 : 5457']  Totral num:  54976
-Training - Accuracy: 0.994   Loss:0.020
-Test     - Accuracy: 0.989   Loss:0.051
-Best     - Accuracy: 0.989
-
-Started epoch 9
-100%|██████████| 859/859 [00:25<00:00, 34.20it/s]
-['0 : 5447', '1 : 6131', '2 : 5459', '3 : 5604', '4 : 5335', '5 : 4987', '6 : 5432', '7 : 5774', '8 : 5354', '9 : 5453']  Totral num:  54976
-Training - Accuracy: 0.994   Loss:0.019
-Test     - Accuracy: 0.989   Loss:0.042
-Best     - Accuracy: 0.989
-
-Started epoch 10
-100%|██████████| 859/859 [00:24<00:00, 35.30it/s]
-['0 : 5411', '1 : 6163', '2 : 5490', '3 : 5622', '4 : 5351', '5 : 4931', '6 : 5447', '7 : 5748', '8 : 5391', '9 : 5422']  Totral num:  54976
-Training - Accuracy: 0.994   Loss:0.021
-Test     - Accuracy: 0.989   Loss:0.047
-Best     - Accuracy: 0.989
-
-"""
-

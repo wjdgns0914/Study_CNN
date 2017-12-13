@@ -4,8 +4,6 @@ from tensorflow.python.training import moving_averages
 from tensorflow.contrib.framework import get_name_scope
 import numpy as np
 FLAGS = tf.app.flags.FLAGS
-# print(FLAGS.Drift)
-print(FLAGS.Variation)
 if FLAGS.Variation==True:
     Reset_Meanmean, Reset_Meanstd = 0., 0.1707
     Reset_Stdmean, Reset_Stdstd = 0.0942, 0.01884
@@ -17,6 +15,10 @@ else:
     Set_Meanmean, Set_Meanstd = 0., 0.0000000001
     Set_Stdmean, Set_Stdstd = 0., 0.
 
+drift_Meanmean, drift_Meanstd = 0.09, 0.001
+drift_Stdmean, drift_Stdstd = 0, 0.0003
+
+
 def binarize(x):
     """
     Clip and binarize tensor using the straight through estimator (STE) for the gradient.
@@ -27,6 +29,7 @@ def binarize(x):
         with g.gradient_override_map({"Sign": "Identity"}):
             x=tf.clip_by_value(x,-1,1)
             return tf.sign(x)
+
 @tf.RegisterGradient("fluc_grad")
 def fluc_grad(op,grad):
     shape=op.inputs[1]._shape_as_list()
@@ -44,7 +47,6 @@ def fluctuate(x,scale=1,Drift=False):
     tf.add_to_collection('pre_Wbin_update_op', pre_Wbin_update_op)
     tf.add_to_collection('pre_Wfluc', pre_Wfluc_val_place)
     tf.add_to_collection('pre_Wfluc_update_op', pre_Wfluc_update_op)
-
     with tf.name_scope("Fluctuated") as name:
         Reset_Meanvalue = tf.Variable(tf.random_normal(shape=filter_shape,
                                             mean=Reset_Meanmean,
@@ -65,6 +67,13 @@ def fluctuate(x,scale=1,Drift=False):
                                    trainable=False)
         fluc_Reset = tf.reshape(tf.distributions.Normal(loc=Reset_Meanvalue, scale=Reset_Stdvalue).sample(1),filter_shape)
         fluc_Set = tf.reshape(tf.distributions.Normal(loc=Set_Meanvalue, scale=Set_Stdvalue).sample(1), filter_shape)
+        # 드리프트에 var 넣기2##################################################################
+        drift_Meanvalue = tf.Variable(tf.random_normal(shape=filter_shape,
+                                                       mean=drift_Meanmean, stddev=drift_Meanstd, dtype=tf.float32,
+                                                       name="Mean_Value_drift"), trainable=False, name='Im5')
+        drift_Stdvalue = tf.cast(tf.Variable(((drift_Meanvalue - drift_Meanmean) / drift_Meanstd) * drift_Stdstd +
+                                             drift_Stdmean, trainable=False, name='Im6'), dtype=tf.float32)
+
         g = tf.get_default_graph()
             # assign 1 to elements which have same state with pre-state
         keep_element = tf.cast(tf.equal(x,pre_Wbin), tf.float32)
@@ -76,16 +85,27 @@ def fluctuate(x,scale=1,Drift=False):
         # fluctuation이 적용 된 최종 weight 값,Reset,set에 drift를 따로 적용하기 위해 pre_Wbin이 0보다 큰 부분,작은 부분, 두 부분으로 나누었다.
         step_col = tf.get_collection("Step")
         if Drift and step_col!=[]:
-            step = tf.Variable(tf.zeros(shape=filter_shape, dtype=tf.float32),trainable=False)
-            step = tf.assign(step, step * keep_element + keep_element)
-            drift_factor = (step+1.)/(tf.cast(tf.equal(step,0.),dtype=tf.float32)+step)
-            # drift_scale=tf.cast(0.09 * tf.log(drift_factor) / tf.log(tf.constant(10, dtype=tf.float32)),dtype=tf.float32)
-            # drift_scale = 0.09 * tf.log(drift_factor) / tf.log(10.)
-            # drift_scale = tf.log(drift_factor)/ tf.log(10.)
-            drift_scale =  (tf.log(drift_factor) / tf.log(10.))*0.09
-            tf.add_to_collection("testt", drift_scale)
+            drift_value = tf.Variable(tf.ones(shape=filter_shape) * 0.09, trainable=False)
+            new_drift = tf.cast((pre_Wbin <= 0), dtype=tf.float32)* tf.cast((x > 0), dtype=tf.float32)
+            # 전사이클에서는 -1이었고 이번 사이클에 1로 업데이트 된 element 부분을 1로
+            new_value = tf.reshape(tf.distributions.Normal(loc=drift_Meanvalue, scale=drift_Stdvalue).sample(1)
+                                   , shape=filter_shape)
+            # # 전체의 random 값을 generate.
+            assign_drift = drift_value.assign(new_value * new_drift + drift_value * (1 - new_drift))
+            tf.add_to_collection("Drift_value",drift_value)
+            step = tf.Variable(tf.zeros(shape=filter_shape, dtype=tf.float32), trainable=False)
+            with tf.control_dependencies([assign_drift]):
+                #step = tf.Variable(tf.zeros(shape=filter_shape, dtype=tf.float32), trainable=False)
+                step = tf.assign(step, step * keep_element + keep_element,name="Drift_step")
+                tf.add_to_collection("Drift_step",step)
+                #step은 각 웨이트가 드리프트를 지금 몇스텝째 하고있는지를 나타낸다.
+                drift_factor = (step+1.)/(tf.cast(tf.equal(step,0.),dtype=tf.float32)+step)
+                drift_scale =  (tf.log(drift_factor) / tf.log(10.))*drift_value
+                #drift_value는 dvalue이다,즉 power law에서 지수부분
+                tf.add_to_collection("testt", drift_scale)
         else:
-            # drift_scale=tf.constant(tf.zeros(shape=filter_shape))
+            tf.add_to_collection("Drift_value", tf.convert_to_tensor([]))
+            tf.add_to_collection("Drift_step", tf.convert_to_tensor([]))
             drift_scale = tf.constant(0.)
         with g.gradient_override_map({"Mul": "fluc_grad", "Cast": "Identity",
                                       "Equal": "fluc_grad", "Greater": "fluc_grad",
@@ -96,7 +116,6 @@ def fluctuate(x,scale=1,Drift=False):
                         tf.cast(tf.less_equal(pre_Wbin,0), tf.float32) * keep_element * pre_Wfluc * 1. \
                         + Wfluc_Reset + Wfluc_Set
         return Wfluc
-
 """
 주의:binarize(x)가 activation까지 바이너리화 하는 중이다.
 아래의 세개는 각각 Binary Conv layer,Binary Conv layer for weight, Vanilla Conv layer
@@ -112,6 +131,7 @@ def BinarizedSpatialConvolution(nOutputPlane, kW, kH, dW=1, dH=1,
             tf.add_to_collection(tf.GraphKeys.ACTIVATIONS, bin_x)
             bin_w = binarize(w)
             fluc_w = fluctuate(bin_w,Drift=Drift) if fluc else bin_w
+            tf.add_to_collection('Original_Weight',w)
             tf.add_to_collection('Binarized_Weight', bin_w)
             tf.add_to_collection('Fluctuated_Weight', fluc_w)
             '''
@@ -138,6 +158,7 @@ def BinarizedWeightOnlySpatialConvolution(nOutputPlane, kW, kH, dW=1, dH=1,
 
             bin_w = binarize(w)
             fluc_w = fluctuate(bin_w,Drift=Drift) if fluc else bin_w
+            tf.add_to_collection('Original_Weight', w)
             tf.add_to_collection('Binarized_Weight', bin_w)
             tf.add_to_collection('Fluctuated_Weight', fluc_w)
 
@@ -155,6 +176,7 @@ def SpatialConvolution(nOutputPlane, kW, kH, dW=1, dH=1,
         with tf.variable_scope(values=[x], name_or_scope=None, default_name=name, reuse=reuse):
             w = tf.get_variable('weight', [kH, kW, nInputPlane, nOutputPlane],
                             initializer=tf.contrib.layers.xavier_initializer_conv2d())
+            tf.add_to_collection('Original_Weight', w)
             out = tf.nn.conv2d(x, w, strides=[1, dH, dW, 1], padding=padding)
             if bias:
                 b = tf.get_variable('bias', [nOutputPlane],initializer=tf.zeros_initializer)
@@ -168,11 +190,11 @@ def SpatialConvolution(nOutputPlane, kW, kH, dW=1, dH=1,
 def Affine(nOutputPlane, bias=True, name=None, reuse=None):
     def affineLayer(x, is_training=True):
         with tf.variable_scope(values=[x], name_or_scope=name, default_name='Affine', reuse=reuse):
-
             temp=x.get_shape().as_list()
             reshaped = tf.reshape(x, [-1,np.array(temp[1:]).prod()])
             nInputPlane = reshaped.get_shape().as_list()[1]
             w = tf.get_variable('weight', [nInputPlane, nOutputPlane], initializer=tf.contrib.layers.xavier_initializer())
+            tf.add_to_collection('Original_Weight', w)
             output = tf.matmul(reshaped, w)
             if bias:
                 b = tf.get_variable('bias', [nOutputPlane],initializer=tf.zeros_initializer)
@@ -194,6 +216,7 @@ def BinarizedAffine(nOutputPlane, bias=True, name=None, reuse=None,bin=True,fluc
             w = tf.get_variable('weight', [nInputPlane, nOutputPlane], initializer=tf.contrib.layers.xavier_initializer())
             bin_w = binarize(w)
             fluc_w = fluctuate(bin_w,Drift=Drift) if fluc else bin_w
+            tf.add_to_collection('Original_Weight', w)
             tf.add_to_collection('Binarized_Weight', bin_w)
             tf.add_to_collection('Fluctuated_Weight', fluc_w)
 
@@ -217,9 +240,9 @@ def BinarizedWeightOnlyAffine(nOutputPlane, bias=True, name=None, reuse=None, Dr
             w = tf.get_variable('weight', [nInputPlane, nOutputPlane], initializer=tf.contrib.layers.xavier_initializer())
             bin_w = binarize(w)
             fluc_w = fluctuate(bin_w,Drift=Drift)
+            tf.add_to_collection('Original_Weight', w)
             tf.add_to_collection('Binarized_Weight', bin_w)
             tf.add_to_collection('Fluctuated_Weight', fluc_w)
-
             output = tf.matmul(reshaped, fluc_w)
             if bias:
                 b = tf.get_variable('bias', [nOutputPlane],initializer=tf.zeros_initializer)
@@ -302,7 +325,6 @@ def SpatialAveragePooling(kW, kH=None, dW=None, dH=None, padding='VALID',
 def BatchNormalization(name='BatchNormalization',*kargs, **kwargs):
     output=wrapNN(tf.contrib.layers.batch_norm,name, *kargs, **kwargs)
     return output
-
 
 def Sequential(moduleList):
     def model(x, is_training=True):
