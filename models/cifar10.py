@@ -1,32 +1,35 @@
 from nnUtils import *
 
 model = Sequential([
-    SpatialConvolution(128,3,3,1,1, padding='VALID', bias=False),
-    BatchNormalization(name='L2_Batch'),
+    SpatialConvolution(64,3,3,1,1, padding='SAME', bias=False),
     ReLU(),
-    SpatialConvolution(128,3,3, padding='SAME', bias=False),
     SpatialMaxPooling(2,2,2,2,name='L5_MaxPooling'),
-    BatchNormalization(name='L6_Batch'),
+
+    SpatialConvolution(128,3,3,1,1, padding='SAME', bias=False),
     ReLU(),
-    SpatialConvolution(256,3,3, padding='SAME', bias=False),
-    BatchNormalization(name='L9_Batch'),
+    SpatialMaxPooling(2,2,2,2,name='L5_MaxPooling'),
+
+    SpatialConvolution(256,3,3,1,1, padding='SAME', bias=False),
     ReLU(),
-    SpatialConvolution(256,3,3, padding='SAME', bias=False),
+    SpatialConvolution(256, 3, 3,1,1, padding='SAME', bias=False),
+    ReLU(),
     SpatialMaxPooling(2,2,2,2,name='L12_MaxPooling'),
-    BatchNormalization(name='L13_Batch'),
+
+    SpatialConvolution(512,3,3, padding='SAME', bias=False),
     ReLU(),
     SpatialConvolution(512,3,3, padding='SAME', bias=False),
-    BatchNormalization(name='L16_Batch'),
     ReLU(),
-    SpatialConvolution(512,3,3, padding='SAME', bias=False),
     SpatialMaxPooling(2,2,2,2,name='L19_MaxPooling'),
-    BatchNormalization(name='L20_Batch'),
+
+    SpatialConvolution(512, 3, 3, padding='SAME', bias=False),
+    ReLU(),
+    SpatialConvolution(512, 3, 3, padding='SAME', bias=False),
+    ReLU(),
+    SpatialMaxPooling(2, 2, 2, 2, name='L19_MaxPooling'),
+
+    Affine(1024, bias=False),
     ReLU(),
     Affine(1024, bias=False),
-    BatchNormalization(name='L23_Batch'),
-    ReLU(),
-    Affine(1024, bias=False),
-    BatchNormalization(name='L26_Batch'),
     ReLU(),
     Affine(10, bias=False)
 ])

@@ -19,11 +19,11 @@ tf.set_random_seed(333)  # reproducibility
 # Basic model parameters.
 tf.app.flags.DEFINE_integer('batch_size', 64,
                             """Number of images to process in a batch.""")
-tf.app.flags.DEFINE_integer('num_epochs', 120,
+tf.app.flags.DEFINE_integer('num_epochs', 150,
                             """Number of epochs to train. -1 for unlimited""")
 tf.app.flags.DEFINE_float('learning_rate', 0.001,
                             """Initial learning rate used.""")
-tf.app.flags.DEFINE_string('model','BNN_MNIST0_nodrop',
+tf.app.flags.DEFINE_string('model','cifar10',
                            """Name of loaded model.""")
 tf.app.flags.DEFINE_string('save', timestr,
                            """Name of saved dir.""")
@@ -179,8 +179,8 @@ def train(model, data,
     # Define loss and optimizer
     with tf.name_scope('objective'):
         yt_one=tf.one_hot(yt,10)
-        loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=yt_one, logits=y))
-        accuracy=tf.reduce_mean(tf.cast(tf.equal(yt, tf.cast(tf.argmax(y, dimension=1),dtype=tf.int32)),dtype=tf.float32))
+        loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=yt_one, logits=y),name="loss_real")
+        accuracy=tf.reduce_mean(tf.cast(tf.equal(yt, tf.cast(tf.argmax(y, dimension=1),dtype=tf.int32)),dtype=tf.float32),name="accuracy_real")
         # accuracy = tf.reduce_mean(tf.cast(tf.nn.in_top_k(y, yt, 1), tf.float32))
     opt = tf.contrib.layers.optimize_loss(loss, global_step, learning_rate, 'Adam',
                                           gradient_noise_scale=None, gradient_multipliers=None,
