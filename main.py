@@ -12,18 +12,18 @@ from tqdm import tqdm
 from tensorflow.python.framework import ops
 import matplotlib.pyplot as plt
 timestr = '-'.join(str(x) for x in list(tuple(datetime.now().timetuple())[:6]))
-MOVING_AVERAGE_DECAY = 0.997
+MOVING_AVERAGE_DECAY = 0.999
 FLAGS = tf.app.flags.FLAGS
 tf.set_random_seed(333)  # reproducibility
-
+WEIGHT_DECAY_FACTOR = 0.0001
 # Basic model parameters.
-tf.app.flags.DEFINE_integer('batch_size', 64,
+tf.app.flags.DEFINE_integer('batch_size', 128,
                             """Number of images to process in a batch.""")
-tf.app.flags.DEFINE_integer('num_epochs', 150,
+tf.app.flags.DEFINE_integer('num_epochs', 60,
                             """Number of epochs to train. -1 for unlimited""")
-tf.app.flags.DEFINE_float('learning_rate', 0.001,
+tf.app.flags.DEFINE_float('learning_rate', 0.01,
                             """Initial learning rate used.""")
-tf.app.flags.DEFINE_string('model','cifar10',
+tf.app.flags.DEFINE_string('model','cifar10_BNN_big',
                            """Name of loaded model.""")
 tf.app.flags.DEFINE_string('save', timestr,
                            """Name of saved dir.""")
@@ -37,13 +37,14 @@ tf.app.flags.DEFINE_string('Drift1', True,
                            """Drift or Not.""")
 tf.app.flags.DEFINE_string('Drift2', True,
                            """Drift or Not.""")
-tf.app.flags.DEFINE_string('Variation', True,
+tf.app.flags.DEFINE_string('Variation', False,
                            """Variation or Not.""")
 tf.app.flags.DEFINE_string('log', 'ERROR',
                            'The threshold for what messages will be logged '
                             """DEBUG, INFO, WARN, ERROR, or FATAL.""")
 
-FLAGS.checkpoint_dir = './results/' + FLAGS.save
+FLAGS.checkpoint_dir = './results/1226/' + FLAGS.save
+# FLAGS.checkpoint_dir = './results/1226/2017-12-26-13-44-47'
 FLAGS.log_dir = FLAGS.checkpoint_dir + '/log/'
 # tf.logging.set_verbosity(FLAGS.log)
 
@@ -60,7 +61,7 @@ def add_summaries(scalar_list=[], activation_list=[], grad_list=[], var_list=[],
 
     for var in scalar_list:
         if var != None:
-            tf.summary.scalar(var.op.name, var)
+            tf.summary.scalar((var.op.name).split('/')[-1]+'/training_real', var)
 
     for activation in activation_list:
         if activation != None:
@@ -80,30 +81,39 @@ def add_summaries(scalar_list=[], activation_list=[], grad_list=[], var_list=[],
     for W,Wbin,Wfluc,Step,Value in zip(*zip_list):
         #이름 뽑아내기, 물론 여기서 새로 Fluctuated, Binarized 식으로 쓰는게 더 직관적이지만 기존의 텐서에서 이름 뽑아내는 명령어와
         #split 함수 써보기 위해서 그냥 이렇게 한다.
-        name_layer= (W.op.name).split('/')[0]  # W가 Wbin,Wfluc으로 바뀌어도 어차피 / 기준 첫번째는 레이어 이름이라 결과는 똑같다.
-        name_W    = "Original"
-        name_Wbin = (Wbin.op.name).split('/')[1]
-        name_Wfluc= (Wfluc.op.name).split('/')[1]
-        num_weights = 5
-        min_drift_step = 10
-        # Histogram
-        tf.summary.histogram(name_layer+ '/0/' + name_W, W) \
-            if W != [] else print("No W_list")
-        tf.summary.histogram(name_layer+ '/1/' + name_Wbin, Wbin) \
-            if Wbin != [] else print("No Wbin_list")
-        tf.summary.histogram(name_layer+ '/2/' + name_Wfluc, Wfluc) \
-            if Wfluc != [] else print("No Wfluc_list")
+        # Histogram and name
+        if W != []:
+            name_layer = (W.op.name).split('/')[0]  # W가 Wbin,Wfluc으로 바뀌어도 어차피 / 기준 첫번째는 레이어 이름이라 결과는 똑같다.
+            name_W = "Original"
+            tf.summary.histogram(name_layer + '/0/' + name_W, W)
+        else:
+            print("No W_list")
+        if Wbin != []:
+            name_Wbin = (Wbin.op.name).split('/')[1]
+            tf.summary.histogram(name_layer + '/1/' + name_Wbin, Wbin)
+        else:
+            print("No Wbin_list")
+        if Wfluc!=[]:
+            name_Wfluc= (Wfluc.op.name).split('/')[1]
+            tf.summary.histogram(name_layer + '/2/' + name_Wfluc, Wfluc)
+        else:
+            print("No Wfluc_list")
 
-        #Kernel - mainly for CNN
+
+        # Kernel - mainly for CNN
         sz = W.get_shape().as_list()
         if len(sz) == 4 and sz[2] == 3:
             kernels = tf.transpose(W, [3, 0, 1, 2])
             tf.summary.image(W.op.name + '/kernels', group_batch_images(kernels), max_outputs=1)
-        if Value.get_shape().as_list()[0] != 0:
+
+        # Drift ratio part: all elements in the 'Value' should bigger than 0
+        if Value!=[] and Value.get_shape().as_list()[0] != 0:
             assert_op = tf.Assert(tf.reduce_min(Value) >= 0, [Value])
             with tf.control_dependencies([assert_op]):
                 Value=tf.identity(Value)
+
         # Some weights in the layer
+        num_weights = 5
         index_history=[]
         for i in range(num_weights):
             index = [np.random.randint(j) for j in W.get_shape().as_list()]
@@ -115,13 +125,14 @@ def add_summaries(scalar_list=[], activation_list=[], grad_list=[], var_list=[],
                 tf.summary.scalar(name_layer+ index_str + '/1/' + name_Wbin, Wbin[index])
             if Wfluc != []:
                 tf.summary.scalar(name_layer+ index_str + '/2/' + name_Wfluc, Wfluc[index])
-            if Value.get_shape().as_list()[0] != 0:
+            if Value!=[] and Value.get_shape().as_list()[0] != 0:
                 tf.summary.scalar(name_layer+ index_str + '/3/' + 'dvalue', Value[index])
         file = open(FLAGS.checkpoint_dir + "/model.py", "a")
         print("'''",name_layer,' : ',index_history,"'''",file=file)
         file.close()
+
         # Calculate the ratio (Drifted weights num)/(all weights num)
-        if Step.get_shape().as_list()[0] != 0:
+        if Step!=[] and Step.get_shape().as_list()[0] != 0:
             num=Step.get_shape().num_elements()
             weights_keeping1  = tf.cast(Step>20,dtype=tf.float32)
             weights_keeping2 = tf.cast(Step > 120, dtype=tf.float32)
@@ -156,8 +167,8 @@ def _learning_rate_decay_fn(learning_rate, global_step):
     return tf.train.exponential_decay(
       learning_rate,
       global_step,
-      decay_steps=1000,
-      decay_rate=0.9,
+      decay_steps=11700,
+      decay_rate=0.1,
       staircase=True)
 learning_rate_decay_fn = _learning_rate_decay_fn
 
@@ -179,13 +190,14 @@ def train(model, data,
     # Define loss and optimizer
     with tf.name_scope('objective'):
         yt_one=tf.one_hot(yt,10)
-        loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=yt_one, logits=y),name="loss_real")
-        accuracy=tf.reduce_mean(tf.cast(tf.equal(yt, tf.cast(tf.argmax(y, dimension=1),dtype=tf.int32)),dtype=tf.float32),name="accuracy_real")
+        loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=yt_one, logits=y),name="loss")\
+               + WEIGHT_DECAY_FACTOR*tf.stack([tf.nn.l2_loss(i) for i in tf.get_collection('Original_Weight', scope='L')])
+        accuracy=tf.reduce_mean(tf.cast(tf.equal(yt, tf.cast(tf.argmax(y, dimension=1),dtype=tf.int32)),dtype=tf.float32),name="accuracy")
         # accuracy = tf.reduce_mean(tf.cast(tf.nn.in_top_k(y, yt, 1), tf.float32))
     opt = tf.contrib.layers.optimize_loss(loss, global_step, learning_rate, 'Adam',
                                           gradient_noise_scale=None, gradient_multipliers=None,
-                                          clip_gradients=None, #moving_average_decay=0.9,
-                                           update_ops=None, variables=None, name=None)  #learning_rate_decay_fn=learning_rate_decay_fn,
+                                          clip_gradients=None, # moving_average_decay=0.9,
+                                           update_ops=None, variables=None, name=None,learning_rate_decay_fn=learning_rate_decay_fn)
         #grads = opt.compute_gradients(loss)
         #apply_gradient_op = opt.apply_gradients(grads, global_step=global_step)
     print("Definite Moving Average...")
@@ -220,13 +232,13 @@ def train(model, data,
 
     if FLAGS.summary:
 
-        add_summaries(scalar_list=[accuracy, accuracy_avg, loss, loss_avg],
+        add_summaries(scalar_list=[accuracy, loss],
             activation_list=tf.get_collection(tf.GraphKeys.ACTIVATIONS),
             var_list=list_W,Wbin_list=list_Wbin,Wfluc_list=list_Wfluc,Drift_step=list_Drift_step,Drift_value=list_Drift_value)
             # grad_list=grads)
 
     summary_op = tf.summary.merge_all()
-    saver = tf.train.Saver(max_to_keep=3)
+
     print("Open Session...")
     # Configure options for session
     gpu_options = tf.GPUOptions(allow_growth=True,per_process_gpu_memory_fraction=0.9)
@@ -235,23 +247,37 @@ def train(model, data,
             log_device_placement=False,
             allow_soft_placement=True, gpu_options=gpu_options))
     sess.run(tf.global_variables_initializer())
+    call_list=tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES)
+    saver = tf.train.Saver(max_to_keep=3,var_list=call_list)
+    ckpt = tf.train.get_checkpoint_state('./results/1226/cifar10_big_(60epoch_1)')
+    if ckpt and ckpt.model_checkpoint_path:
+        # Restores from checkpoint
+        saver.restore(sess, ckpt.model_checkpoint_path)
+    else:
+        print('No checkpoint file found')
+    saver = tf.train.Saver(max_to_keep=3)
     summary_writer = tf.summary.FileWriter(log_dir, graph=sess.graph)
-
     coord = tf.train.Coordinator()
     threads = tf.train.start_queue_runners(sess=sess, coord=coord)
 
     num_batches = int(data.size[0] / batch_size)
+    # print(tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES))
+    # print(tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES))
+
     print("Check the collections...")
     print("list_W:\n",list_W,'\nNum:',len(list_W))
+    print("Activations:\n", tf.get_collection(tf.GraphKeys.ACTIVATIONS), '\nNum:', len(tf.get_collection(tf.GraphKeys.ACTIVATIONS)))
     # print("list_Wbin:\n:",list_Wbin,'\nNum:',len(list_Wbin))
     # print("list_Wfluc:\n:",list_Wfluc,'\nNum:',len(list_Wfluc))
     # print("list_pre_Wbin:\n:", list_pre_Wbin, '\nNum:', len(list_pre_Wbin))
     # print("list_pre_Wfluc:\n:", list_pre_Wfluc, '\nNum:', len(list_pre_Wfluc))
     # print("list_pre_Wbin_op:\n:", list_pre_Wbin_op, '\nNum:', len(list_pre_Wbin_op))
     # print("list_pre_Wfluc_op:\n:", list_pre_Wfluc_op, '\nNum:', len(list_pre_Wfluc_op))
-    print('We start training..num of trainable paramaters: %d' %count_params(tf.trainable_variables()))
+
     best_acc=0
     file = open(FLAGS.checkpoint_dir + "/model.py", "a")
+    print('We start training..num of trainable paramaters: %d' % count_params(tf.trainable_variables()))
+    print("'''\nWe start training..num of trainable paramaters: %d'''" % count_params(tf.trainable_variables()),file=file)
     print("'''\nDrift1 : ",FLAGS.Drift1,"\nDrift2 : ",FLAGS.Drift2,"\nVariation : ",FLAGS.Variation,file=file)
     print("\nLR : ", FLAGS.learning_rate, "\nbatch_size : ", FLAGS.batch_size, "\nDataset : ", FLAGS.dataset,"'''", file=file)
     for i in range(num_epochs):

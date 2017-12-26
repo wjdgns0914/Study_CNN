@@ -137,7 +137,7 @@ class DataProvider:
         self.training = training
         self.enqueue_many=MNIST
 
-    def next_batch(self, batch_size, min_queue_examples=3000, num_threads=8):
+    def next_batch(self, batch_size, min_queue_examples=5000, num_threads=8):
         """Construct a queued batch of images and labels.
 
         Args:
@@ -157,17 +157,17 @@ class DataProvider:
         image, label = self.data
         if self.training:
             images, label_batch = tf.train.shuffle_batch(
-            [image, label],
+            [preprocess_training(image, height=28, width=28), label],
             batch_size=batch_size,
             num_threads=num_threads,
             capacity=min_queue_examples + 3 * batch_size,
-            min_after_dequeue=min_queue_examples,enqueue_many=self.enqueue_many)
+            min_after_dequeue=min_queue_examples)
         else:
             images, label_batch = tf.train.batch(
-            [preprocess_evaluation(image, height=self.size[1], width=self.size[2]), label],
+            [preprocess_evaluation(image, height=28, width=28), label],
             batch_size=batch_size,
             num_threads=num_threads,
-            capacity=min_queue_examples + 3 * batch_size,enqueue_many=self.enqueue_many)
+            capacity=min_queue_examples + 3 * batch_size)
 
         return images, tf.reshape(label_batch, [batch_size])
 """
@@ -209,6 +209,9 @@ def preprocess_training(img, height=None, width=None, normalize=None):
                                              max_delta=63)
     distorted_image = tf.image.random_contrast(distorted_image,
                                            lower=0.2, upper=1.8)
+
+    # float_image = tf.image.per_image_standardization(distorted_image)
+
     if normalize:
         # Subtract off the mean and divide by the variance of the pixels.
         distorted_image = tf.image.per_image_whitening(distorted_image)
