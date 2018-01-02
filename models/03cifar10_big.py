@@ -1,4 +1,7 @@
 from nnUtils import *
+#03: floating 연산을 하는 네트워크 01보다 컨볼루션 필터 크기가 약간 더 크다.
+#FC layer를 한개로 줄였다.
+
 FLAGS = tf.app.flags.FLAGS
 print("Model")
 print(FLAGS.Drift1,FLAGS.Drift2,FLAGS.Variation)

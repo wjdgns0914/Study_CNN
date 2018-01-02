@@ -1,31 +1,33 @@
 from nnUtils import *
+from nnUtils import *
+#02: 01의 바이너리 버전 연산을 하는 네트워크 비교적 작다.
 
 model = Sequential([
-    SpatialConvolution(64,3,3,1,1, padding='SAME', bias=False, name='L1_Conv'),
+    BinarizedWeightOnlySpatialConvolution(64,3,3,1,1, padding='SAME', bias=False, name='L1_Conv'),
     BatchNormalization(name='L1_Batch'),
     ReLU(),
-    SpatialConvolution(64,3,3,1,1, padding='SAME', bias=False, name='L2_Conv'),
+    BinarizedWeightOnlySpatialConvolution(64,3,3,1,1, padding='SAME', bias=False, name='L2_Conv'),
     BatchNormalization(name='L2_Batch'),
     ReLU(),
     SpatialMaxPooling(2,2,2,2,name='L3_MaxPooling'),
 
-    SpatialConvolution(128,3,3,1,1, padding='SAME', bias=False, name='L4_Conv'),
+    BinarizedWeightOnlySpatialConvolution(128,3,3,1,1, padding='SAME', bias=False, name='L4_Conv'),
     BatchNormalization(name='L4_Batch'),
     ReLU(),
-    SpatialConvolution(128, 3, 3,1,1, padding='SAME', bias=False,name='L5_Conv'),
+    BinarizedWeightOnlySpatialConvolution(128, 3, 3,1,1, padding='SAME', bias=False,name='L5_Conv'),
     BatchNormalization(name='L5_Batch'),
     ReLU(),
     SpatialMaxPooling(2,2,2,2,name='L6_MaxPooling'),
 
-    Affine(512, bias=False,name='L7_Affine'),
+    BinarizedAffine(512, bias=False,name='L7_Affine'),
     BatchNormalization(name='L7_Batch'),
     ReLU(),
     Dropout(0.6),
-    Affine(256, bias=False,name='L8_Affine'),
+    BinarizedAffine(256, bias=False,name='L8_Affine'),
     BatchNormalization(name='L8_Batch'),
     ReLU(),
     Dropout(0.6),
-    Affine(10, bias=False,name='L9_Affine')
+    BinarizedAffine(10, bias=False,name='L9_Affine')
 
     # # SpatialConvolution(512,3,3, padding='SAME', bias=False, name='L7_Conv'),
     # # ReLU(),

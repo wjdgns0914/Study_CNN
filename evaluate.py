@@ -8,6 +8,7 @@ import time
 import numpy as np
 import tensorflow as tf
 from data import get_data_provider
+
 """
 질문1:sess를 인자로 왜 받아올까? 내가 더한거였다..삭제.
 질문2:왜 세션을 한번 더 여는걸까?
@@ -55,8 +56,8 @@ def evaluate(model, dataset,
             threads = []
             for qr in tf.get_collection(tf.GraphKeys.QUEUE_RUNNERS):
                 threads.extend(qr.create_threads(sess, coord=coord, daemon=True,start=True))
-
-            num_batches = int(math.ceil(data.size[0] / batch_size))
+            tempsize = 10000 if dataset == 'MNIST' else data.size[0]
+            num_batches = int(math.ceil(tempsize / batch_size))
             total_acc = 0  # Counts the number of correct predictions per batch.
             total_loss = 0 # Sum the loss of predictions per batch.
             step = 0

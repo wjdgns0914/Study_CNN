@@ -111,7 +111,7 @@ def __read_cifar(filenames, shuffle=True, cifar100=False):
   return tf.cast(image, tf.float32), label
 
 
-def __read_MNIST(mnist,training=True):
+def __read_MNIST(training=True):
     """Reads and parses examples from MNIST data files."""
     mnist = input_data.read_data_sets("Datasets/MNIST", one_hot=False)
     if training:
@@ -131,11 +131,11 @@ min_queue_examples=1000, num_threads=8 는 미리 정해준다, 그리고 웬만
 어쩄든 min_queue_examples 가 크면 클수록 큰사이즈의 queue에서 데이터를 뽑게 되므로 잘섞어서 뽑는 셈이 된다.
 """
 class DataProvider:
-    def __init__(self, data, size=None, training=True,MNIST=False):
+    def __init__(self, data, size=None, training=True,argum=False):
         self.size = size or [None]*4
         self.data = data
         self.training = training
-        self.enqueue_many=MNIST
+        self.argum=argum
 
     def next_batch(self, batch_size, min_queue_examples=5000, num_threads=8):
         """Construct a queued batch of images and labels.
@@ -155,16 +155,21 @@ class DataProvider:
         # read 'batch_size' images + labels from the example queue.
 
         image, label = self.data
+        if self.argum:
+            data=[preprocess_training(image, height=28, width=28), label]
+        else:
+            data=[image,label]
+
         if self.training:
             images, label_batch = tf.train.shuffle_batch(
-            [preprocess_training(image, height=28, width=28), label],
+            data,
             batch_size=batch_size,
             num_threads=num_threads,
             capacity=min_queue_examples + 3 * batch_size,
             min_after_dequeue=min_queue_examples)
         else:
             images, label_batch = tf.train.batch(
-            [preprocess_evaluation(image, height=28, width=28), label],
+            data,
             batch_size=batch_size,
             num_threads=num_threads,
             capacity=min_queue_examples + 3 * batch_size)
@@ -191,14 +196,14 @@ def preprocess_evaluation(img, height=None, width=None, normalize=None):
 
 def preprocess_training(img, height=None, width=None, normalize=None):
     img_size = img.get_shape().as_list()
-    height = height or img_size[0]
-    width = width or img_size[1]
+    height = height or img_size[1]
+    width = width or img_size[2]
 
     # Image processing for training the network. Note the many random
     # distortions applied to the image.
 
     # Randomly crop a [height, width] section of the image.
-    distorted_image = tf.random_crop(img, [height, width, 3])
+    distorted_image = tf.random_crop(img, [height, width, img_size[3]])
 
     # Randomly flip the image horizontally.
     distorted_image = tf.image.random_flip_left_right(distorted_image)
@@ -228,7 +233,7 @@ MNIST dataset을 추가하려면 여기다가 하면 될거 같다.
 여기서 이게 왜 유용하냐면 단순히 데이터셋을 반환하면 그걸 또 shuffle해줘야하잖아?
 그니까 셔플기능까지 넣은 데이터셋을 반환하고싶은거다. 마치 텐서플로우에 내장되어있는 dataprovider처럼!
 """
-def get_data_provider(name, mnist=None,training=True):
+def get_data_provider(name,training=True):
     if name == 'cifar10':
         path = os.path.join(DATA_DIR,'cifar10')
         url = URLs['cifar10']
@@ -237,10 +242,10 @@ def get_data_provider(name, mnist=None,training=True):
         data_dir = os.path.join(path, 'cifar-10-batches-bin/')
         if training:
             return DataProvider(__read_cifar([os.path.join(data_dir, 'data_batch_%d.bin' % i)
-                                    for i in range(1, 6)]), [50000, 32,32,3], True)
+                                    for i in range(1, 6)]), [50000, 32,32,3], True,True)
         else:
             return DataProvider(__read_cifar([os.path.join(data_dir, 'test_batch.bin')]),
-                                [10000, 32,32, 3], False)
+                                [10000, 32,32, 3], False,True)
     elif name == 'cifar100':
         path = os.path.join(DATA_DIR,'cifar100')
         url = URLs['cifar100']
@@ -254,9 +259,14 @@ def get_data_provider(name, mnist=None,training=True):
 
     elif name == 'MNIST':
         if training:
-            return DataProvider(__read_MNIST(mnist=mnist),size=[55000, 28,28, 1], training=True,MNIST=True)
+            return DataProvider(__read_MNIST(training=True),size=[55000, 28,28, 1], training=True,argum=False)
         else:
-            return DataProvider(__read_MNIST(mnist=mnist,training=False),size=[10000, 28,28, 1],training=False,MNIST=True)
+            return DataProvider(__read_MNIST(training=False),size=[10000, 28,28, 1],training=False,argum=False)
+
+        # if training:
+        #     return DataProvider(__read_MNIST(training=True),size=[55000, 28,28, 1], training=True,argum=False)
+        # else:
+        #     return DataProvider(__read_MNIST(training=False),size=[10000, 28,28, 1],training=False,argum=False)
 
 def group_batch_images(x):
     sz = x.get_shape().as_list()

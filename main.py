@@ -17,19 +17,19 @@ FLAGS = tf.app.flags.FLAGS
 tf.set_random_seed(333)  # reproducibility
 WEIGHT_DECAY_FACTOR = 0.0001
 # Basic model parameters.
-tf.app.flags.DEFINE_integer('batch_size', 128,
+tf.app.flags.DEFINE_integer('batch_size', 64,
                             """Number of images to process in a batch.""")
-tf.app.flags.DEFINE_integer('num_epochs', 60,
+tf.app.flags.DEFINE_integer('num_epochs', 120,
                             """Number of epochs to train. -1 for unlimited""")
-tf.app.flags.DEFINE_float('learning_rate', 0.01,
+tf.app.flags.DEFINE_float('learning_rate', 0.0001,
                             """Initial learning rate used.""")
-tf.app.flags.DEFINE_string('model','cifar10_BNN_big',
+tf.app.flags.DEFINE_string('model','MNIST01_LeNet5',
                            """Name of loaded model.""")
 tf.app.flags.DEFINE_string('save', timestr,
                            """Name of saved dir.""")
 tf.app.flags.DEFINE_string('load', None,
                            """Name of loaded dir.""")
-tf.app.flags.DEFINE_string('dataset', 'cifar10',
+tf.app.flags.DEFINE_string('dataset', 'MNIST',
                            """Name of dataset used.""")
 tf.app.flags.DEFINE_string('summary', True,
                            """Record summary.""")
@@ -39,11 +39,13 @@ tf.app.flags.DEFINE_string('Drift2', True,
                            """Drift or Not.""")
 tf.app.flags.DEFINE_string('Variation', False,
                            """Variation or Not.""")
+tf.app.flags.DEFINE_string('Weight_decay', True,
+                           """Weightdecay or Not.""")
 tf.app.flags.DEFINE_string('log', 'ERROR',
                            'The threshold for what messages will be logged '
                             """DEBUG, INFO, WARN, ERROR, or FATAL.""")
 
-FLAGS.checkpoint_dir = './results/1226/' + FLAGS.save
+FLAGS.checkpoint_dir = './results/today/' + FLAGS.save
 # FLAGS.checkpoint_dir = './results/1226/2017-12-26-13-44-47'
 FLAGS.log_dir = FLAGS.checkpoint_dir + '/log/'
 # tf.logging.set_verbosity(FLAGS.log)
@@ -176,6 +178,7 @@ learning_rate_decay_fn = _learning_rate_decay_fn
 def train(model, data,
           batch_size=128,
           learning_rate=FLAGS.learning_rate,
+          Weight_decay=FLAGS.Weight_decay,
           log_dir='./log',
           checkpoint_dir='./checkpoint',
           num_epochs=-1):
@@ -190,8 +193,9 @@ def train(model, data,
     # Define loss and optimizer
     with tf.name_scope('objective'):
         yt_one=tf.one_hot(yt,10)
-        loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=yt_one, logits=y),name="loss")\
-               + WEIGHT_DECAY_FACTOR*tf.stack([tf.nn.l2_loss(i) for i in tf.get_collection('Original_Weight', scope='L')])
+        loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=yt_one, logits=y), name="loss")
+        if Weight_decay:
+            loss=loss+tf.reduce_sum(WEIGHT_DECAY_FACTOR*tf.stack([tf.nn.l2_loss(i) for i in tf.get_collection('Original_Weight', scope='L')]))
         accuracy=tf.reduce_mean(tf.cast(tf.equal(yt, tf.cast(tf.argmax(y, dimension=1),dtype=tf.int32)),dtype=tf.float32),name="accuracy")
         # accuracy = tf.reduce_mean(tf.cast(tf.nn.in_top_k(y, yt, 1), tf.float32))
     opt = tf.contrib.layers.optimize_loss(loss, global_step, learning_rate, 'Adam',
@@ -247,19 +251,18 @@ def train(model, data,
             log_device_placement=False,
             allow_soft_placement=True, gpu_options=gpu_options))
     sess.run(tf.global_variables_initializer())
-    call_list=tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES)
-    saver = tf.train.Saver(max_to_keep=3,var_list=call_list)
-    ckpt = tf.train.get_checkpoint_state('./results/1226/cifar10_big_(60epoch_1)')
-    if ckpt and ckpt.model_checkpoint_path:
-        # Restores from checkpoint
-        saver.restore(sess, ckpt.model_checkpoint_path)
-    else:
-        print('No checkpoint file found')
+    # call_list=tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES)
+    # saver = tf.train.Saver(max_to_keep=3,var_list=call_list)
+    # ckpt = tf.train.get_checkpoint_state('./results/1226/cifar10_big_(60epoch_1)')
+    # if ckpt and ckpt.model_checkpoint_path:
+    #     # Restores from checkpoint
+    #     saver.restore(sess, ckpt.model_checkpoint_path)
+    # else:
+    #     print('No checkpoint file found')
     saver = tf.train.Saver(max_to_keep=3)
     summary_writer = tf.summary.FileWriter(log_dir, graph=sess.graph)
     coord = tf.train.Coordinator()
     threads = tf.train.start_queue_runners(sess=sess, coord=coord)
-
     num_batches = int(data.size[0] / batch_size)
     # print(tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES))
     # print(tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES))
